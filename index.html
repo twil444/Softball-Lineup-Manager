@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#174a7c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Softball Lineups">
+  <title>Softball Lineup Manager</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Youth Softball Coach Tool</p>
+        <h1>Softball Lineup Manager</h1>
+        <p class="subtitle">
+          Build lineups fast, balance field time, and keep score from one phone-friendly screen.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button id="reset-demo" class="ghost-button" type="button">Reset Sample Data</button>
+        <button id="autofill-team" class="primary-button" type="button">Balance Defense</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel team-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Teams</p>
+            <h2>Roster Setup</h2>
+          </div>
+          <div class="team-tabs" id="team-tabs" aria-label="Select team"></div>
+        </div>
+
+        <label class="field">
+          <span>Team name</span>
+          <input id="team-name" type="text" maxlength="40">
+        </label>
+
+        <div class="roster-header">
+          <div>
+            <p class="section-label">Players</p>
+            <h3>Batting Order</h3>
+          </div>
+          <div class="roster-actions">
+            <p class="hint">Use Balance Defense for a fair starting point, then adjust manually as needed.</p>
+            <button id="add-player" class="ghost-button" type="button">Add Player</button>
+          </div>
+        </div>
+
+        <div id="roster-list" class="roster-list"></div>
+      </section>
+
+      <section class="panel lineup-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Defense</p>
+            <h2>Inning Lineups</h2>
+          </div>
+          <label class="field compact-field">
+            <span>Innings</span>
+            <select id="inning-count"></select>
+          </label>
+        </div>
+
+        <div class="legend">
+          <span><strong>10 in field:</strong> P, C, 1B, 2B, 3B, SS, LF, LCF, RCF, RF</span>
+          <span><strong>Bench:</strong> the balance tool spreads sit time as evenly as possible</span>
+        </div>
+
+        <div id="locked-defense-panel" class="panel-subsection"></div>
+
+        <div id="lineup-grid" class="lineup-grid"></div>
+
+        <div class="panel-subsection">
+          <div class="panel-header">
+            <div>
+              <p class="section-label">Field View</p>
+              <h3>Current Defensive Inning</h3>
+            </div>
+            <label class="field compact-field">
+              <span>Show inning</span>
+              <select id="defense-visual-inning"></select>
+            </label>
+          </div>
+          <div id="defense-diamond" class="defense-diamond"></div>
+        </div>
+
+        <div class="panel-subsection">
+          <div class="panel-header">
+            <div>
+              <p class="section-label">Inning Grid</p>
+              <h3>Defense By Inning</h3>
+            </div>
+          </div>
+          <div id="defense-grid" class="defense-grid"></div>
+        </div>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Summary</p>
+            <h2>Playing Time</h2>
+          </div>
+        </div>
+
+        <div id="summary-stats" class="summary-stats"></div>
+      </section>
+
+      <section class="panel preferences-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Defense Control</p>
+            <h2>Preferred Positions</h2>
+          </div>
+        </div>
+        <p class="hint">Set up to four preferred positions per player so balance suggestions stay realistic.</p>
+        <div id="preferences-list" class="preferences-list"></div>
+      </section>
+
+      <section class="panel game-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Game Mode</p>
+            <h2>Offline Scorekeeping</h2>
+          </div>
+          <button id="reset-game" class="ghost-button" type="button">Reset Game</button>
+        </div>
+
+        <div class="game-layout">
+          <div class="scoreboard">
+            <div class="score-card">
+              <span class="score-label">Team</span>
+              <strong id="team-score">0</strong>
+            </div>
+            <div class="score-card">
+              <span class="score-label">Opponent</span>
+              <div class="score-stepper">
+                <button id="opponent-minus" class="move-button" type="button">-</button>
+                <strong id="opponent-score">0</strong>
+                <button id="opponent-plus" class="move-button" type="button">+</button>
+              </div>
+            </div>
+            <div class="score-card">
+              <span class="score-label">Inning</span>
+              <div class="score-stepper">
+                <button id="inning-minus" class="move-button" type="button">-</button>
+                <strong id="game-inning">1</strong>
+                <button id="inning-plus" class="move-button" type="button">+</button>
+              </div>
+            </div>
+            <div class="score-card">
+              <span class="score-label">Outs</span>
+              <div class="score-stepper">
+                <button id="outs-minus" class="move-button" type="button">-</button>
+                <strong id="game-outs">0</strong>
+                <button id="outs-plus" class="move-button" type="button">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="game-actions">
+            <div class="current-batter">
+              <p class="section-label">Current Batter</p>
+              <h3 id="current-batter-name"></h3>
+              <p id="next-batter-name" class="hint"></p>
+            </div>
+
+            <div class="action-buttons">
+              <button id="record-hit" class="primary-button" type="button">Hit</button>
+              <button id="record-walk" class="ghost-button" type="button">Walk</button>
+              <button id="record-out" class="ghost-button" type="button">Out</button>
+              <button id="record-strikeout" class="ghost-button" type="button">Strikeout</button>
+            </div>
+
+            <div class="action-buttons">
+              <button id="prev-batter" class="ghost-button" type="button">Previous Batter</button>
+              <button id="next-batter" class="ghost-button" type="button">Next Batter</button>
+              <button id="clear-bases" class="ghost-button" type="button">Clear Bases</button>
+            </div>
+          </div>
+
+          <div class="bases-panel">
+            <p class="section-label">Base Paths</p>
+            <div id="game-diamond" class="game-diamond"></div>
+            <div id="bases-grid" class="bases-grid"></div>
+          </div>
+
+          <div class="stats-panel">
+            <p class="section-label">Batting Totals</p>
+            <div id="game-totals" class="mini-stats"></div>
+            <p class="section-label">Recent Plays</p>
+            <div id="game-log" class="game-log"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="team-tab-template">
+    <button class="team-tab" type="button"></button>
+  </template>
+
+  <template id="roster-row-template">
+    <div class="roster-row">
+      <span class="bat-spot"></span>
+      <input class="player-name" type="text" maxlength="40">
+      <div class="row-actions">
+        <button class="move-button" data-direction="up" type="button" aria-label="Move player up">▲</button>
+        <button class="move-button" data-direction="down" type="button" aria-label="Move player down">▼</button>
+      </div>
+    </div>
+  </template>
+
+  <template id="inning-card-template">
+    <article class="inning-card">
+      <div class="inning-header">
+        <h3></h3>
+        <p class="bench-list"></p>
+      </div>
+      <div class="inning-positions"></div>
+    </article>
+  </template>
+
+  <template id="position-row-template">
+    <label class="position-row">
+      <span></span>
+      <select></select>
+    </label>
+  </template>
+
+  <template id="base-card-template">
+    <article class="base-card">
+      <div class="base-card-header">
+        <h3></h3>
+        <span class="runner-status">Empty</span>
+      </div>
+      <select class="base-runner-select"></select>
+      <div class="base-actions">
+        <button class="ghost-button" data-base-action="advance" type="button">Advance</button>
+        <button class="ghost-button" data-base-action="score" type="button">Score</button>
+        <button class="ghost-button" data-base-action="out" type="button">Out</button>
+        <button class="ghost-button" data-base-action="clear" type="button">Clear</button>
+      </div>
+    </article>
+  </template>
+
+  <template id="preference-row-template">
+    <article class="preference-row">
+      <div class="preference-player"></div>
+      <div class="preference-selects"></div>
+    </article>
+  </template>
+
+  <template id="locked-row-template">
+    <article class="locked-row">
+      <div class="locked-label"></div>
+      <div class="locked-selects"></div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

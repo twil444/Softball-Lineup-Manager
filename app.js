@@ -1,0 +1,1197 @@
+const STORAGE_KEY = "softball-lineup-manager-v2";
+const POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"];
+const OUTFIELD_POSITIONS = ["LF", "LCF", "RCF", "RF"];
+const PREFERENCE_OPTIONS = ["P", "C", "1B", "2B", "3B", "SS", "OF"];
+const BASES = ["first", "second", "third"];
+const TEAM_RULES = {
+  "team-a": {
+    optimizePositions: ["1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"],
+    lockedPositions: ["P", "C"],
+  },
+  "team-b": {
+    optimizePositions: [...POSITIONS],
+    lockedPositions: [],
+  },
+};
+const PONIES_PLAYERS = [
+  "Charlotte Wilson",
+  "Everly McKay",
+  "Emerson Stechow",
+  "Betsy Bender",
+  "Josephine Casper",
+  "Isabelle Ross",
+  "Ava Arbini",
+  "Rosalia Petricca",
+  "Juliana Husein",
+  "Ameera Husain",
+  "Amara Hussein",
+  "Claire Wilson",
+];
+const WILDCATS_PLAYERS = [
+  "Victoria Arbini",
+  "Madeline Baltic",
+  "Audrey Bohm",
+  "Josephine Bohm",
+  "Mia Cazaux",
+  "Harper Foley",
+  "Margaret Kearney",
+  "Saige McGuckin",
+  "Teagan McGuckin",
+  "Aviana Welling",
+  "Vivian Williams",
+  "Lucy Wilson",
+];
+
+const defaultState = () => ({
+  activeTeamId: "team-a",
+  innings: 7,
+  teams: [
+    createDefaultTeam("team-a", "Ponies", PONIES_PLAYERS),
+    createDefaultTeam("team-b", "Wildcats", WILDCATS_PLAYERS),
+  ],
+});
+
+function createDefaultTeam(id, name, playerNames) {
+  const players = playerNames.map((playerName, index) => ({
+    id: `${id}-player-${index + 1}`,
+    name: playerName,
+    preferences: [],
+  }));
+
+  const innings = {};
+  for (let inning = 1; inning <= 7; inning += 1) {
+    innings[String(inning)] = createEmptyAssignments();
+  }
+
+  const team = { id, name, players, innings, game: createDefaultGame() };
+  if (TEAM_RULES[id]?.lockedPositions?.length) {
+    for (let inning = 1; inning <= 7; inning += 1) {
+      team.innings[String(inning)].P = players[0]?.id || "";
+      team.innings[String(inning)].C = players[1]?.id || "";
+    }
+  }
+  rebalanceDefense(team, 7);
+  return team;
+}
+
+function createEmptyAssignments() {
+  return POSITIONS.reduce((assignments, position) => {
+    assignments[position] = "";
+    return assignments;
+  }, {});
+}
+
+function createDefaultGame() {
+  return {
+    inning: 1,
+    outs: 0,
+    teamScore: 0,
+    opponentScore: 0,
+    currentBatterIndex: 0,
+    bases: {
+      first: "",
+      second: "",
+      third: "",
+    },
+    totals: {
+      hits: 0,
+      walks: 0,
+      strikeouts: 0,
+      runs: 0,
+    },
+    log: [],
+  };
+}
+
+function rebalanceDefense(team, inningCount) {
+  const players = team.players;
+  const rules = getTeamRules(team);
+  const optimizedPositions = rules.optimizePositions;
+  const lockedPositions = rules.lockedPositions;
+  const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
+  const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const fieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const positionCounts = Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(POSITIONS.map((position) => [position, 0]))]));
+  const lastBenchedInning = Object.fromEntries(players.map((player) => [player.id, -999]));
+
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    const inningKey = String(inning);
+    const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
+    const assignments = createEmptyAssignments();
+    lockedPositions.forEach((position) => {
+      assignments[position] = existingAssignments[position] || "";
+    });
+    const lockedIds = new Set(lockedPositions.map((position) => assignments[position]).filter(Boolean));
+    const benchedPlayers = benchSlotsPerInning > 0
+      ? [...players]
+          .filter((player) => !lockedIds.has(player.id))
+          .sort((a, b) => {
+            const benchDelta = benchCounts[a.id] - benchCounts[b.id];
+            if (benchDelta !== 0) {
+              return benchDelta;
+            }
+
+            const fieldDelta = fieldCounts[b.id] - fieldCounts[a.id];
+            if (fieldDelta !== 0) {
+              return fieldDelta;
+            }
+
+            const lastBenchDelta = lastBenchedInning[a.id] - lastBenchedInning[b.id];
+            if (lastBenchDelta !== 0) {
+              return lastBenchDelta;
+            }
+
+            return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+          })
+          .slice(0, benchSlotsPerInning)
+      : [];
+
+    benchedPlayers.forEach((player) => {
+      benchCounts[player.id] += 1;
+      lastBenchedInning[player.id] = inning;
+    });
+
+    const benchedIds = new Set(benchedPlayers.map((player) => player.id));
+    lockedIds.forEach((playerId) => {
+      fieldCounts[playerId] += 1;
+    });
+    const availablePlayers = players
+      .filter((player) => !benchedIds.has(player.id) && !lockedIds.has(player.id))
+      .sort((a, b) => {
+        const fieldDelta = fieldCounts[a.id] - fieldCounts[b.id];
+        if (fieldDelta !== 0) {
+          return fieldDelta;
+        }
+
+        const benchDelta = benchCounts[b.id] - benchCounts[a.id];
+        if (benchDelta !== 0) {
+          return benchDelta;
+        }
+
+        const aIndex = players.findIndex((player) => player.id === a.id);
+        const bIndex = players.findIndex((player) => player.id === b.id);
+        return ((aIndex - inning + players.length) % players.length) - ((bIndex - inning + players.length) % players.length);
+      });
+
+    const remainingPlayers = [...availablePlayers];
+    optimizedPositions.forEach((position) => {
+      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts);
+      assignments[position] = player?.id || "";
+      if (player) {
+        fieldCounts[player.id] += 1;
+        positionCounts[player.id][position] += 1;
+        const chosenIndex = remainingPlayers.findIndex((candidate) => candidate.id === player.id);
+        remainingPlayers.splice(chosenIndex, 1);
+      }
+    });
+
+    team.innings[inningKey] = assignments;
+  }
+}
+
+function getTeamRules(team) {
+  return TEAM_RULES[team.id] || { optimizePositions: [...POSITIONS], lockedPositions: [] };
+}
+
+function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts) {
+  if (!remainingPlayers.length) {
+    return null;
+  }
+
+  const preferredPlayers = remainingPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
+  if (preferredPlayers.length) {
+    preferredPlayers.sort((a, b) => {
+      const preferenceDelta = getPreferenceRank(a.preferences, position) - getPreferenceRank(b.preferences, position);
+      if (preferenceDelta !== 0) {
+        return preferenceDelta;
+      }
+      const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
+      if (varietyDelta !== 0) {
+        return varietyDelta;
+      }
+      return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
+    });
+    return preferredPlayers[0];
+  }
+
+  return [...remainingPlayers].sort((a, b) => {
+    const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
+    if (varietyDelta !== 0) {
+      return varietyDelta;
+    }
+    return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
+  })[0];
+}
+
+function getPreferenceRank(preferences, position) {
+  const directIndex = preferences.indexOf(position);
+  if (directIndex >= 0) {
+    return directIndex;
+  }
+  const outfieldIndex = preferences.indexOf("OF");
+  if (outfieldIndex >= 0 && OUTFIELD_POSITIONS.includes(position)) {
+    return outfieldIndex;
+  }
+  return 999;
+}
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      return defaultState();
+    }
+
+    const parsed = JSON.parse(saved);
+    return normalizeState(parsed);
+  } catch (error) {
+    console.error("Unable to load saved data", error);
+    return defaultState();
+  }
+}
+
+function normalizeState(saved) {
+  const base = defaultState();
+  const state = {
+    activeTeamId: saved.activeTeamId || base.activeTeamId,
+    innings: clampInnings(saved.innings || base.innings),
+    teams: Array.isArray(saved.teams) && saved.teams.length === 2 ? saved.teams : base.teams,
+  };
+
+  state.teams = state.teams.map((team, teamIndex) => {
+    const fallback = base.teams[teamIndex];
+    const players = Array.isArray(team.players) && team.players.length >= 1
+      ? team.players.map((player, playerIndex) => ({
+          id: player.id || fallback.players[playerIndex]?.id || `player-${playerIndex + 1}`,
+          name: player.name || fallback.players[playerIndex]?.name || `Player ${playerIndex + 1}`,
+          preferences: normalizePreferences(player.preferences),
+        }))
+      : fallback.players;
+    const innings = {};
+
+    for (let inning = 1; inning <= 7; inning += 1) {
+      const existing = team.innings?.[String(inning)];
+      innings[String(inning)] = POSITIONS.reduce((assignments, position, positionIndex) => {
+        const fallbackId = players[positionIndex % players.length]?.id || "";
+        const chosenId = existing?.[position];
+        assignments[position] = players.some((player) => player.id === chosenId) ? chosenId : fallbackId;
+        return assignments;
+      }, {});
+    }
+
+    return {
+      id: team.id || fallback.id,
+      name: team.name || fallback.name,
+      players,
+      innings,
+      game: normalizeGame(team.game, players),
+    };
+  });
+
+  if (!state.teams.some((team) => team.id === state.activeTeamId)) {
+    state.activeTeamId = state.teams[0].id;
+  }
+
+  return state;
+}
+
+function clampInnings(value) {
+  const numeric = Number(value);
+  return Math.min(7, Math.max(1, Number.isFinite(numeric) ? numeric : 7));
+}
+
+function normalizeGame(savedGame, players) {
+  const game = createDefaultGame();
+  game.inning = Math.max(1, Number(savedGame?.inning) || 1);
+  game.outs = Math.min(3, Math.max(0, Number(savedGame?.outs) || 0));
+  game.teamScore = Math.max(0, Number(savedGame?.teamScore) || 0);
+  game.opponentScore = Math.max(0, Number(savedGame?.opponentScore) || 0);
+  game.currentBatterIndex = clampBatterIndex(savedGame?.currentBatterIndex, players.length);
+  game.totals.hits = Math.max(0, Number(savedGame?.totals?.hits) || 0);
+  game.totals.walks = Math.max(0, Number(savedGame?.totals?.walks) || 0);
+  game.totals.strikeouts = Math.max(0, Number(savedGame?.totals?.strikeouts) || 0);
+  game.totals.runs = Math.max(0, Number(savedGame?.totals?.runs) || 0);
+  game.log = Array.isArray(savedGame?.log) ? savedGame.log.slice(0, 20) : [];
+
+  BASES.forEach((base) => {
+    const playerId = savedGame?.bases?.[base];
+    game.bases[base] = players.some((player) => player.id === playerId) ? playerId : "";
+  });
+
+  return game;
+}
+
+function clampBatterIndex(value, playerCount) {
+  const count = Math.max(1, playerCount || 1);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return ((numeric % count) + count) % count;
+}
+
+function normalizePreferences(preferences) {
+  if (!Array.isArray(preferences)) {
+    return [];
+  }
+  return preferences.filter((position, index) => PREFERENCE_OPTIONS.includes(position) && preferences.indexOf(position) === index).slice(0, 4);
+}
+
+let state = loadState();
+
+const elements = {
+  teamTabs: document.querySelector("#team-tabs"),
+  teamName: document.querySelector("#team-name"),
+  rosterList: document.querySelector("#roster-list"),
+  lineupGrid: document.querySelector("#lineup-grid"),
+  lockedDefensePanel: document.querySelector("#locked-defense-panel"),
+  defenseGrid: document.querySelector("#defense-grid"),
+  summaryStats: document.querySelector("#summary-stats"),
+  preferencesList: document.querySelector("#preferences-list"),
+  inningCount: document.querySelector("#inning-count"),
+  defenseVisualInning: document.querySelector("#defense-visual-inning"),
+  defenseDiamond: document.querySelector("#defense-diamond"),
+  resetDemo: document.querySelector("#reset-demo"),
+  autofillTeam: document.querySelector("#autofill-team"),
+  resetGame: document.querySelector("#reset-game"),
+  addPlayer: document.querySelector("#add-player"),
+  teamScore: document.querySelector("#team-score"),
+  opponentScore: document.querySelector("#opponent-score"),
+  gameInning: document.querySelector("#game-inning"),
+  gameOuts: document.querySelector("#game-outs"),
+  opponentMinus: document.querySelector("#opponent-minus"),
+  opponentPlus: document.querySelector("#opponent-plus"),
+  inningMinus: document.querySelector("#inning-minus"),
+  inningPlus: document.querySelector("#inning-plus"),
+  outsMinus: document.querySelector("#outs-minus"),
+  outsPlus: document.querySelector("#outs-plus"),
+  currentBatterName: document.querySelector("#current-batter-name"),
+  nextBatterName: document.querySelector("#next-batter-name"),
+  recordHit: document.querySelector("#record-hit"),
+  recordWalk: document.querySelector("#record-walk"),
+  recordOut: document.querySelector("#record-out"),
+  recordStrikeout: document.querySelector("#record-strikeout"),
+  prevBatter: document.querySelector("#prev-batter"),
+  nextBatter: document.querySelector("#next-batter"),
+  clearBases: document.querySelector("#clear-bases"),
+  basesGrid: document.querySelector("#bases-grid"),
+  gameDiamond: document.querySelector("#game-diamond"),
+  gameTotals: document.querySelector("#game-totals"),
+  gameLog: document.querySelector("#game-log"),
+  teamTabTemplate: document.querySelector("#team-tab-template"),
+  rosterRowTemplate: document.querySelector("#roster-row-template"),
+  inningCardTemplate: document.querySelector("#inning-card-template"),
+  positionRowTemplate: document.querySelector("#position-row-template"),
+  baseCardTemplate: document.querySelector("#base-card-template"),
+  preferenceRowTemplate: document.querySelector("#preference-row-template"),
+  lockedRowTemplate: document.querySelector("#locked-row-template"),
+};
+
+for (let inning = 1; inning <= 7; inning += 1) {
+  const option = document.createElement("option");
+  option.value = String(inning);
+  option.textContent = String(inning);
+  elements.inningCount.append(option);
+  elements.defenseVisualInning.append(option.cloneNode(true));
+}
+
+elements.teamName.addEventListener("input", (event) => {
+  updateActiveTeam((team) => {
+    team.name = event.target.value;
+  });
+});
+
+elements.inningCount.addEventListener("change", (event) => {
+  state.innings = clampInnings(event.target.value);
+  saveAndRender();
+});
+
+elements.defenseVisualInning.addEventListener("change", () => {
+  renderDefenseDiamond();
+});
+
+elements.resetDemo.addEventListener("click", () => {
+  state = defaultState();
+  saveAndRender();
+});
+
+elements.autofillTeam.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    rebalanceDefense(team, state.innings);
+  });
+});
+
+elements.addPlayer.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    const nextNumber = team.players.length + 1;
+    const playerId = `${team.id}-player-${Date.now()}`;
+    team.players.push({
+      id: playerId,
+      name: `${team.name} Player ${nextNumber}`,
+    });
+    team.game = normalizeGame(team.game, team.players);
+  });
+});
+
+elements.resetGame.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    team.game = createDefaultGame();
+  });
+});
+
+elements.opponentMinus.addEventListener("click", () => adjustGameNumber("opponentScore", -1, 0));
+elements.opponentPlus.addEventListener("click", () => adjustGameNumber("opponentScore", 1, 0));
+elements.inningMinus.addEventListener("click", () => adjustGameNumber("inning", -1, 1));
+elements.inningPlus.addEventListener("click", () => adjustGameNumber("inning", 1, 1));
+elements.outsMinus.addEventListener("click", () => adjustGameNumber("outs", -1, 0, 3));
+elements.outsPlus.addEventListener("click", () => adjustGameNumber("outs", 1, 0, 3));
+elements.recordHit.addEventListener("click", () => recordPlateAppearance("Hit"));
+elements.recordWalk.addEventListener("click", () => recordPlateAppearance("Walk"));
+elements.recordOut.addEventListener("click", () => recordPlateAppearance("Out"));
+elements.recordStrikeout.addEventListener("click", () => recordPlateAppearance("Strikeout"));
+elements.prevBatter.addEventListener("click", () => shiftCurrentBatter(-1));
+elements.nextBatter.addEventListener("click", () => shiftCurrentBatter(1));
+elements.clearBases.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    team.game.bases = createDefaultGame().bases;
+    addGameLog(team.game, "Bases cleared");
+  });
+});
+
+function getActiveTeam() {
+  return state.teams.find((team) => team.id === state.activeTeamId) || state.teams[0];
+}
+
+function updateActiveTeam(mutator) {
+  const activeTeam = getActiveTeam();
+  mutator(activeTeam);
+  saveAndRender();
+}
+
+function saveAndRender() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+}
+
+function render() {
+  renderTeamTabs();
+  renderRoster();
+  renderLineups();
+  renderLockedDefenseControls();
+  renderSummary();
+  renderPreferences();
+  renderDefenseDiamond();
+  renderDefenseGrid();
+  renderGameMode();
+}
+
+function renderTeamTabs() {
+  elements.teamTabs.innerHTML = "";
+  for (const team of state.teams) {
+    const button = elements.teamTabTemplate.content.firstElementChild.cloneNode(true);
+    button.textContent = team.name;
+    button.classList.toggle("active", team.id === state.activeTeamId);
+    button.addEventListener("click", () => {
+      state.activeTeamId = team.id;
+      saveAndRender();
+    });
+    elements.teamTabs.append(button);
+  }
+
+  elements.teamName.value = getActiveTeam().name;
+  elements.inningCount.value = String(state.innings);
+  if (Number(elements.defenseVisualInning.value) > state.innings || !elements.defenseVisualInning.value) {
+    elements.defenseVisualInning.value = "1";
+  }
+}
+
+function renderRoster() {
+  const team = getActiveTeam();
+  elements.rosterList.innerHTML = "";
+
+  team.players.forEach((player, index) => {
+    const row = elements.rosterRowTemplate.content.firstElementChild.cloneNode(true);
+    row.querySelector(".bat-spot").textContent = String(index + 1);
+
+    const input = row.querySelector(".player-name");
+    input.value = player.name;
+    input.addEventListener("input", (event) => {
+      updateActiveTeam((activeTeam) => {
+        activeTeam.players[index].name = event.target.value;
+      });
+    });
+
+    row.querySelector('[data-direction="up"]').addEventListener("click", () => movePlayer(index, -1));
+    row.querySelector('[data-direction="down"]').addEventListener("click", () => movePlayer(index, 1));
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "move-button remove-button";
+    removeButton.textContent = "Remove";
+    removeButton.setAttribute("aria-label", `Remove ${player.name || "player"}`);
+    removeButton.addEventListener("click", () => removePlayer(index));
+    row.querySelector(".row-actions").append(removeButton);
+
+    elements.rosterList.append(row);
+  });
+}
+
+function movePlayer(index, direction) {
+  updateActiveTeam((team) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= team.players.length) {
+      return;
+    }
+
+    [team.players[index], team.players[targetIndex]] = [team.players[targetIndex], team.players[index]];
+    team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex, team.players.length);
+  });
+}
+
+function removePlayer(index) {
+  updateActiveTeam((team) => {
+    if (team.players.length <= 1) {
+      return;
+    }
+
+    const [removedPlayer] = team.players.splice(index, 1);
+    for (let inning = 1; inning <= 7; inning += 1) {
+      const assignments = team.innings[String(inning)];
+      POSITIONS.forEach((position) => {
+        if (assignments[position] === removedPlayer.id) {
+          assignments[position] = "";
+        }
+      });
+    }
+
+    BASES.forEach((base) => {
+      if (team.game.bases[base] === removedPlayer.id) {
+        team.game.bases[base] = "";
+      }
+    });
+    team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex, team.players.length);
+  });
+}
+
+function renderLineups() {
+  const team = getActiveTeam();
+  const rules = getTeamRules(team);
+  elements.lineupGrid.innerHTML = "";
+
+  for (let inning = 1; inning <= state.innings; inning += 1) {
+    const inningKey = String(inning);
+    const assignments = team.innings[inningKey];
+    const card = elements.inningCardTemplate.content.firstElementChild.cloneNode(true);
+    card.querySelector("h3").textContent = `Inning ${inning}`;
+
+    const positionsContainer = card.querySelector(".inning-positions");
+    POSITIONS.forEach((position) => {
+      if (rules.lockedPositions.includes(position)) {
+        return;
+      }
+      const row = elements.positionRowTemplate.content.firstElementChild.cloneNode(true);
+      row.querySelector("span").textContent = position;
+      const select = row.querySelector("select");
+      populatePlayerOptions(select, team.players, assignments[position]);
+      select.addEventListener("change", (event) => {
+        updateActiveTeam((activeTeam) => {
+          activeTeam.innings[inningKey][position] = event.target.value;
+        });
+      });
+      positionsContainer.append(row);
+    });
+
+    const benchIds = getBenchPlayers(team.players, assignments);
+    benchIds.forEach((playerId, index) => {
+      const row = elements.positionRowTemplate.content.firstElementChild.cloneNode(true);
+      row.classList.add("bench-row");
+      row.querySelector("span").textContent = `BN${index + 1}`;
+      const select = row.querySelector("select");
+      populatePlayerOptions(select, team.players, playerId, "Open");
+      select.addEventListener("change", (event) => {
+        updateActiveTeam((activeTeam) => {
+          const chosenId = event.target.value;
+          const inningAssignments = activeTeam.innings[inningKey];
+          const currentBench = getBenchPlayers(activeTeam.players, inningAssignments);
+          const replacementId = currentBench[index];
+          POSITIONS.forEach((position) => {
+            if (inningAssignments[position] === chosenId) {
+              inningAssignments[position] = replacementId || "";
+            }
+          });
+        });
+      });
+      positionsContainer.append(row);
+    });
+
+    const duplicateNames = getDuplicateAssignments(team.players, assignments);
+    const benchLabel = card.querySelector(".bench-list");
+    const benchMarkup = benchIds.length
+      ? benchIds.map((playerId) => {
+          const battingNumber = getBattingNumber(team.players, playerId);
+          return `#${battingNumber} ${getPlayerName(team.players, playerId)}`;
+        }).join(" | ")
+      : "None";
+    const duplicateText = duplicateNames.length ? ` | Duplicate: ${duplicateNames.join(", ")}` : "";
+    benchLabel.textContent = `Bench: ${benchMarkup}${duplicateText}`;
+    if (duplicateNames.length) {
+      benchLabel.classList.add("warning");
+    }
+
+    elements.lineupGrid.append(card);
+  }
+}
+
+function renderLockedDefenseControls() {
+  const team = getActiveTeam();
+  const rules = getTeamRules(team);
+  elements.lockedDefensePanel.innerHTML = "";
+
+  if (!rules.lockedPositions.length) {
+    elements.lockedDefensePanel.hidden = true;
+    return;
+  }
+
+  elements.lockedDefensePanel.hidden = false;
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div>`;
+  elements.lockedDefensePanel.append(header);
+
+  rules.lockedPositions.forEach((position) => {
+    const row = elements.lockedRowTemplate.content.firstElementChild.cloneNode(true);
+    row.querySelector(".locked-label").textContent = position;
+    const container = row.querySelector(".locked-selects");
+
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const select = document.createElement("select");
+      populatePlayerOptions(select, team.players, team.innings[String(inning)][position]);
+      select.addEventListener("change", (event) => {
+        updateActiveTeam((activeTeam) => {
+          activeTeam.innings[String(inning)][position] = event.target.value;
+        });
+      });
+      container.append(select);
+    }
+
+    elements.lockedDefensePanel.append(row);
+  });
+}
+
+function renderDefenseGrid() {
+  const team = getActiveTeam();
+  const table = document.createElement("div");
+  table.className = "defense-grid-table";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "defense-grid-row";
+  headerRow.append(createGridCell("Position", true));
+  for (let inning = 1; inning <= state.innings; inning += 1) {
+    headerRow.append(createGridCell(`Inning ${inning}`, true));
+  }
+  table.append(headerRow);
+
+  POSITIONS.forEach((position) => {
+    const row = document.createElement("div");
+    row.className = "defense-grid-row";
+    row.append(createGridCell(position, true));
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const playerId = team.innings[String(inning)][position];
+      const battingNumber = getBattingNumber(team.players, playerId);
+      const playerName = playerId ? getPlayerName(team.players, playerId) : "Open";
+      const cell = document.createElement("div");
+      cell.className = "defense-grid-cell";
+      cell.innerHTML = `<strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span>${playerName}</span>`;
+      row.append(cell);
+    }
+    table.append(row);
+  });
+
+  elements.defenseGrid.innerHTML = "";
+  elements.defenseGrid.append(table);
+}
+
+function createGridCell(text, isHeader = false) {
+  const cell = document.createElement("div");
+  cell.className = `defense-grid-cell${isHeader ? " header" : ""}`;
+  cell.textContent = text;
+  return cell;
+}
+
+function renderPreferences() {
+  const team = getActiveTeam();
+  const rules = getTeamRules(team);
+  const allowedOptions = PREFERENCE_OPTIONS.filter((position) => {
+    if (position === "OF") {
+      return rules.optimizePositions.some((spot) => OUTFIELD_POSITIONS.includes(spot));
+    }
+    return rules.optimizePositions.includes(position);
+  });
+  elements.preferencesList.innerHTML = "";
+
+  team.players.forEach((player, index) => {
+    const row = elements.preferenceRowTemplate.content.firstElementChild.cloneNode(true);
+    row.querySelector(".preference-player").textContent = `${index + 1}. ${player.name || "Unnamed player"}`;
+    const container = row.querySelector(".preference-selects");
+
+    for (let slot = 0; slot < 4; slot += 1) {
+      const select = document.createElement("select");
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = `Choice ${slot + 1}`;
+      select.append(emptyOption);
+
+      allowedOptions.forEach((position) => {
+        const option = document.createElement("option");
+        option.value = position;
+        option.textContent = position;
+        option.selected = player.preferences[slot] === position;
+        select.append(option);
+      });
+
+      select.addEventListener("change", (event) => {
+        updateActiveTeam((activeTeam) => {
+          const existing = activeTeam.players[index].preferences.filter((_, preferenceIndex) => preferenceIndex !== slot);
+          const nextValue = event.target.value;
+          const nextPreferences = [...existing];
+          nextPreferences.splice(slot, 0, nextValue);
+          activeTeam.players[index].preferences = normalizePreferences(nextPreferences.filter(Boolean));
+        });
+      });
+
+      container.append(select);
+    }
+
+    elements.preferencesList.append(row);
+  });
+}
+
+function renderDefenseDiamond() {
+  const team = getActiveTeam();
+  const inningKey = elements.defenseVisualInning.value || "1";
+  const assignments = team.innings[inningKey] || createEmptyAssignments();
+  elements.defenseDiamond.innerHTML = "";
+
+  const coords = {
+    P: ["42%", "55%"],
+    C: ["42%", "79%"],
+    "1B": ["66%", "60%"],
+    "2B": ["57%", "46%"],
+    "3B": ["18%", "60%"],
+    SS: ["28%", "46%"],
+    LF: ["12%", "22%"],
+    LCF: ["30%", "13%"],
+    RCF: ["54%", "13%"],
+    RF: ["72%", "22%"],
+  };
+
+  POSITIONS.forEach((position) => {
+    const spot = document.createElement("article");
+    spot.className = "defense-spot";
+    const [left, top] = coords[position];
+    spot.style.left = left;
+    spot.style.top = top;
+    const playerId = assignments[position];
+    const battingNumber = getBattingNumber(team.players, playerId);
+    spot.innerHTML = `<span class="spot-label">${position}</span><span class="spot-value">${battingNumber || "-"}</span>`;
+    elements.defenseDiamond.append(spot);
+  });
+}
+
+function renderGameMode() {
+  const team = getActiveTeam();
+  const game = team.game;
+  const currentBatter = team.players[game.currentBatterIndex];
+  const nextBatter = team.players[(game.currentBatterIndex + 1) % team.players.length];
+
+  elements.teamScore.textContent = String(game.teamScore);
+  elements.opponentScore.textContent = String(game.opponentScore);
+  elements.gameInning.textContent = String(game.inning);
+  elements.gameOuts.textContent = String(game.outs);
+  elements.currentBatterName.textContent = currentBatter?.name || "No batter selected";
+  elements.nextBatterName.textContent = nextBatter ? `Next: ${nextBatter.name}` : "";
+
+  renderBases(team);
+  renderGameDiamond(team);
+  renderGameTotals(game);
+  renderGameLog(game);
+}
+
+function renderBases(team) {
+  elements.basesGrid.innerHTML = "";
+
+  BASES.forEach((base) => {
+    const card = elements.baseCardTemplate.content.firstElementChild.cloneNode(true);
+    const runnerId = team.game.bases[base];
+    card.querySelector("h3").textContent = base === "first" ? "1st Base" : base === "second" ? "2nd Base" : "3rd Base";
+    card.querySelector(".runner-status").textContent = runnerId ? "Occupied" : "Empty";
+
+    const select = card.querySelector(".base-runner-select");
+    populatePlayerOptions(select, team.players, runnerId, "Empty");
+    select.addEventListener("change", (event) => {
+      updateActiveTeam((activeTeam) => {
+        activeTeam.game.bases[base] = event.target.value;
+      });
+    });
+
+    card.querySelector('[data-base-action="advance"]').addEventListener("click", () => moveBaseRunner(base, "advance"));
+    card.querySelector('[data-base-action="score"]').addEventListener("click", () => moveBaseRunner(base, "score"));
+    card.querySelector('[data-base-action="out"]').addEventListener("click", () => moveBaseRunner(base, "out"));
+    card.querySelector('[data-base-action="clear"]').addEventListener("click", () => moveBaseRunner(base, "clear"));
+
+    elements.basesGrid.append(card);
+  });
+}
+
+function renderGameDiamond(team) {
+  const game = team.game;
+  elements.gameDiamond.innerHTML = "";
+  const spots = [
+    { key: "third", label: "3rd", left: "18%", top: "26%", value: getBattingNumber(team.players, game.bases.third) || "-" },
+    { key: "second", label: "2nd", left: "42%", top: "10%", value: getBattingNumber(team.players, game.bases.second) || "-" },
+    { key: "first", label: "1st", left: "66%", top: "26%", value: getBattingNumber(team.players, game.bases.first) || "-" },
+    { key: "home", label: "Batter", left: "42%", top: "74%", value: String((game.currentBatterIndex % team.players.length) + 1), detail: team.players[game.currentBatterIndex]?.name || "" },
+  ];
+
+  spots.forEach((spotData) => {
+    const spot = document.createElement("article");
+    spot.className = "game-spot";
+    spot.style.left = spotData.left;
+    spot.style.top = spotData.top;
+    spot.innerHTML = `<span class="spot-label">${spotData.label}</span><span class="spot-value">${spotData.value}</span><span class="spot-detail">${spotData.detail || ""}</span>`;
+    elements.gameDiamond.append(spot);
+  });
+}
+
+function renderGameTotals(game) {
+  elements.gameTotals.innerHTML = "";
+  [
+    ["Runs", game.totals.runs],
+    ["Hits", game.totals.hits],
+    ["Walks", game.totals.walks],
+    ["Strikeouts", game.totals.strikeouts],
+  ].forEach(([label, value]) => {
+    const card = document.createElement("article");
+    card.className = "mini-stat";
+    card.innerHTML = `<span class="score-label">${label}</span><strong>${value}</strong>`;
+    elements.gameTotals.append(card);
+  });
+}
+
+function renderGameLog(game) {
+  elements.gameLog.innerHTML = "";
+  if (!game.log.length) {
+    const empty = document.createElement("article");
+    empty.className = "log-entry";
+    empty.textContent = "No plays recorded yet.";
+    elements.gameLog.append(empty);
+    return;
+  }
+
+  game.log.forEach((entry) => {
+    const item = document.createElement("article");
+    item.className = "log-entry";
+    item.innerHTML = `<strong>${entry.title}</strong><p>${entry.detail}</p>`;
+    elements.gameLog.append(item);
+  });
+}
+
+function adjustGameNumber(key, delta, minimum = 0, maximum = Number.POSITIVE_INFINITY) {
+  updateActiveTeam((team) => {
+    const nextValue = Math.max(minimum, Math.min(maximum, team.game[key] + delta));
+    team.game[key] = nextValue;
+    if (key === "outs" && nextValue >= 3) {
+      team.game.outs = 0;
+      team.game.inning += 1;
+      addGameLog(team.game, "Three outs recorded", `Moving to inning ${team.game.inning}`);
+    }
+  });
+}
+
+function shiftCurrentBatter(delta) {
+  updateActiveTeam((team) => {
+    team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex + delta, team.players.length);
+  });
+}
+
+function recordPlateAppearance(result) {
+  updateActiveTeam((team) => {
+    const batter = team.players[team.game.currentBatterIndex];
+    if (!batter) {
+      return;
+    }
+
+    if (result === "Hit") {
+      team.game.totals.hits += 1;
+      placeBatterOnFirst(team.game, batter.id);
+      addGameLog(team.game, `${batter.name} hit`, describeBases(team, team.game));
+    }
+
+    if (result === "Walk") {
+      team.game.totals.walks += 1;
+      forceWalk(team.game, batter.id);
+      addGameLog(team.game, `${batter.name} walk`, describeBases(team, team.game));
+    }
+
+    if (result === "Out") {
+      team.game.outs = Math.min(3, team.game.outs + 1);
+      if (team.game.outs >= 3) {
+        team.game.outs = 0;
+        team.game.inning += 1;
+        addGameLog(team.game, `${batter.name} out in play`, `Three outs. Inning ${team.game.inning}`);
+      } else {
+        addGameLog(team.game, `${batter.name} out in play`, `${team.game.outs} out(s)`);
+      }
+    }
+
+    if (result === "Strikeout") {
+      team.game.totals.strikeouts += 1;
+      team.game.outs = Math.min(3, team.game.outs + 1);
+      if (team.game.outs >= 3) {
+        team.game.outs = 0;
+        team.game.inning += 1;
+        addGameLog(team.game, `${batter.name} strikeout`, `Three outs. Inning ${team.game.inning}`);
+      } else {
+        addGameLog(team.game, `${batter.name} strikeout`, `${team.game.outs} out(s)`);
+      }
+    }
+
+    team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex + 1, team.players.length);
+  });
+}
+
+function placeBatterOnFirst(game, batterId) {
+  if (!game.bases.first) {
+    game.bases.first = batterId;
+    return;
+  }
+
+  if (!game.bases.second) {
+    game.bases.second = game.bases.first;
+    game.bases.first = batterId;
+    return;
+  }
+
+  if (!game.bases.third) {
+    game.bases.third = game.bases.second;
+    game.bases.second = game.bases.first;
+    game.bases.first = batterId;
+    return;
+  }
+
+  scoreRunnerFromBase(game, "third");
+  game.bases.third = game.bases.second;
+  game.bases.second = game.bases.first;
+  game.bases.first = batterId;
+}
+
+function forceWalk(game, batterId) {
+  if (game.bases.first && game.bases.second && game.bases.third) {
+    scoreRunnerFromBase(game, "third");
+  }
+
+  if (game.bases.first && game.bases.second) {
+    game.bases.third = game.bases.second;
+  }
+
+  if (game.bases.first) {
+    game.bases.second = game.bases.first;
+  }
+
+  game.bases.first = batterId;
+}
+
+function moveBaseRunner(base, action) {
+  updateActiveTeam((team) => {
+    const runnerId = team.game.bases[base];
+    const runnerName = getPlayerName(team.players, runnerId);
+    if (!runnerId && action !== "clear") {
+      return;
+    }
+
+    if (action === "advance") {
+      if (base === "third") {
+        scoreRunnerFromBase(team.game, "third");
+        addGameLog(team.game, `${runnerName} advanced`, "Scored from 3rd");
+        return;
+      }
+
+      const nextBase = base === "first" ? "second" : "third";
+      team.game.bases[nextBase] = runnerId;
+      team.game.bases[base] = "";
+      addGameLog(team.game, `${runnerName} advanced`, `${formatBase(base)} to ${formatBase(nextBase)}`);
+      return;
+    }
+
+    if (action === "score") {
+      scoreRunnerFromBase(team.game, base);
+      addGameLog(team.game, `${runnerName} scored`);
+      return;
+    }
+
+    if (action === "out") {
+      team.game.bases[base] = "";
+      team.game.outs = Math.min(3, team.game.outs + 1);
+      if (team.game.outs >= 3) {
+        team.game.outs = 0;
+        team.game.inning += 1;
+      }
+      addGameLog(team.game, `${runnerName} out`, `${team.game.outs} out(s)`);
+      return;
+    }
+
+    team.game.bases[base] = "";
+    addGameLog(team.game, `${formatBase(base)} cleared`);
+  });
+}
+
+function scoreRunnerFromBase(game, base) {
+  if (!game.bases[base]) {
+    return;
+  }
+
+  game.bases[base] = "";
+  game.teamScore += 1;
+  game.totals.runs += 1;
+}
+
+function populatePlayerOptions(select, players, selectedId, emptyLabel = "Open") {
+  select.innerHTML = "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = emptyLabel;
+  emptyOption.selected = selectedId === "";
+  select.append(emptyOption);
+
+  players.forEach((player) => {
+    const option = document.createElement("option");
+    option.value = player.id;
+    option.textContent = formatPlayerOption(players, player.id);
+    option.selected = player.id === selectedId;
+    select.append(option);
+  });
+}
+
+function formatPlayerOption(players, playerId) {
+  const battingNumber = getBattingNumber(players, playerId);
+  const playerName = getPlayerName(players, playerId);
+  return battingNumber ? `${battingNumber}. ${playerName}` : playerName;
+}
+
+function getBenchPlayers(players, assignments) {
+  const selected = new Set(Object.values(assignments).filter(Boolean));
+  return players.filter((player) => !selected.has(player.id)).map((player) => player.id);
+}
+
+function getDuplicateAssignments(players, assignments) {
+  const counts = Object.values(assignments).reduce((map, playerId) => {
+    if (!playerId) {
+      return map;
+    }
+    map[playerId] = (map[playerId] || 0) + 1;
+    return map;
+  }, {});
+
+  return Object.entries(counts)
+    .filter(([, count]) => count > 1)
+    .map(([playerId]) => getPlayerName(players, playerId));
+}
+
+function getPlayerName(players, playerId) {
+  if (!playerId) {
+    return "Unknown";
+  }
+  return players.find((player) => player.id === playerId)?.name || "Unknown";
+}
+
+function getBattingNumber(players, playerId) {
+  const index = players.findIndex((player) => player.id === playerId);
+  return index >= 0 ? index + 1 : null;
+}
+
+function addGameLog(game, title, detail = "") {
+  game.log.unshift({ title, detail });
+  game.log = game.log.slice(0, 20);
+}
+
+function describeBases(team, game) {
+  return BASES
+    .map((base) => `${formatBase(base)}: ${game.bases[base] ? getPlayerName(team.players, game.bases[base]) : "Empty"}`)
+    .join(" | ");
+}
+
+function formatBase(base) {
+  return base === "first" ? "1st" : base === "second" ? "2nd" : "3rd";
+}
+
+function renderSummary() {
+  const team = getActiveTeam();
+  elements.summaryStats.innerHTML = "";
+
+  const stats = team.players.map((player) => {
+    const appearances = { field: 0, bench: 0 };
+    const positions = [];
+
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const assignments = team.innings[String(inning)];
+      const position = POSITIONS.find((slot) => assignments[slot] === player.id);
+      if (position) {
+        appearances.field += 1;
+        positions.push(position);
+      } else {
+        appearances.bench += 1;
+      }
+    }
+
+    return { player, appearances, positions };
+  });
+
+  const benchCounts = stats.map(({ appearances }) => appearances.bench);
+  const maxBench = Math.max(...benchCounts, 0);
+  const minBench = Math.min(...benchCounts, 0);
+
+  stats.forEach(({ player, appearances, positions }) => {
+    const card = document.createElement("article");
+    card.className = "summary-card";
+    if (appearances.bench === maxBench && maxBench - minBench > 1) {
+      card.classList.add("imbalance");
+    }
+
+    const positionCounts = positions.reduce((map, position) => {
+      map[position] = (map[position] || 0) + 1;
+      return map;
+    }, {});
+
+    const topPositions = Object.entries(positionCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([position, count]) => `${position} x${count}`)
+      .join(", ") || "No field innings yet";
+
+    const details = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = player.name || "Unnamed player";
+    const description = document.createElement("p");
+    description.textContent = topPositions;
+    details.append(title, description);
+
+    const meta = document.createElement("div");
+    meta.className = "summary-meta";
+    const spreadText = maxBench - minBench > 0 ? `<br><strong>Spread:</strong> ${minBench}-${maxBench}` : "";
+    meta.innerHTML = `<strong>Field:</strong> ${appearances.field}<br><strong>Bench:</strong> ${appearances.bench}${spreadText}`;
+
+    card.append(details, meta);
+    elements.summaryStats.append(card);
+  });
+}
+
+render();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch((error) => {
+      console.error("Service worker registration failed", error);
+    });
+  });
+}

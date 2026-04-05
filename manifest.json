@@ -1,0 +1,17 @@
+{
+  "name": "Softball Lineup Manager",
+  "short_name": "Lineups",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#eef4f7",
+  "theme_color": "#174a7c",
+  "description": "Set batting orders and inning-by-inning softball defensive lineups for multiple teams.",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
