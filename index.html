@@ -27,8 +27,15 @@
       </div>
     </header>
 
+    <nav class="section-nav" aria-label="Primary navigation">
+      <button class="section-nav-button active" data-section-target="batting" type="button">Batting</button>
+      <button class="section-nav-button" data-section-target="defense" type="button">Defense</button>
+      <button class="section-nav-button" data-section-target="preferences" type="button">Preferred</button>
+      <button class="section-nav-button" data-section-target="scoring" type="button">Scoring</button>
+    </nav>
+
     <main class="layout">
-      <section class="panel team-panel">
+      <section class="panel team-panel" data-section-panel="batting">
         <div class="panel-header">
           <div>
             <p class="section-label">Teams</p>
@@ -56,7 +63,7 @@
         <div id="roster-list" class="roster-list"></div>
       </section>
 
-      <section class="panel lineup-panel">
+      <section class="panel lineup-panel" data-section-panel="defense">
         <div class="panel-header">
           <div>
             <p class="section-label">Defense</p>
@@ -73,9 +80,17 @@
           <span><strong>Bench:</strong> the balance tool spreads sit time as evenly as possible</span>
         </div>
 
-        <div id="locked-defense-panel" class="panel-subsection"></div>
+        <div class="panel-subsection">
+          <div class="panel-header">
+            <div>
+              <p class="section-label">Inning Grid</p>
+              <h3>Defense By Inning</h3>
+            </div>
+          </div>
+          <div id="defense-grid" class="defense-grid"></div>
+        </div>
 
-        <div id="lineup-grid" class="lineup-grid"></div>
+        <div id="locked-defense-panel" class="panel-subsection"></div>
 
         <div class="panel-subsection">
           <div class="panel-header">
@@ -92,17 +107,17 @@
         </div>
 
         <div class="panel-subsection">
-          <div class="panel-header">
+          <div class="panel-header compact-header">
             <div>
-              <p class="section-label">Inning Grid</p>
-              <h3>Defense By Inning</h3>
+              <p class="section-label">Edit Lineups</p>
+              <h3>Inning Cards</h3>
             </div>
           </div>
-          <div id="defense-grid" class="defense-grid"></div>
+          <div id="lineup-grid" class="lineup-grid"></div>
         </div>
       </section>
 
-      <section class="panel summary-panel">
+      <section class="panel summary-panel" data-section-panel="defense">
         <div class="panel-header">
           <div>
             <p class="section-label">Summary</p>
@@ -113,7 +128,7 @@
         <div id="summary-stats" class="summary-stats"></div>
       </section>
 
-      <section class="panel preferences-panel">
+      <section class="panel preferences-panel" data-section-panel="preferences">
         <div class="panel-header">
           <div>
             <p class="section-label">Defense Control</p>
@@ -124,7 +139,7 @@
         <div id="preferences-list" class="preferences-list"></div>
       </section>
 
-      <section class="panel game-panel">
+      <section class="panel game-panel" data-section-panel="scoring">
         <div class="panel-header">
           <div>
             <p class="section-label">Game Mode</p>

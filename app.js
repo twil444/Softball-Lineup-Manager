@@ -338,8 +338,11 @@ function normalizePreferences(preferences) {
 }
 
 let state = loadState();
+let activeSection = "batting";
 
 const elements = {
+  sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
+  sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
   teamTabs: document.querySelector("#team-tabs"),
   teamName: document.querySelector("#team-name"),
   rosterList: document.querySelector("#roster-list"),
@@ -410,6 +413,13 @@ elements.defenseVisualInning.addEventListener("change", () => {
   renderDefenseDiamond();
 });
 
+elements.sectionNavButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    activeSection = button.dataset.sectionTarget;
+    renderSectionVisibility();
+  });
+});
+
 elements.resetDemo.addEventListener("click", () => {
   state = defaultState();
   saveAndRender();
@@ -474,6 +484,7 @@ function saveAndRender() {
 }
 
 function render() {
+  renderSectionVisibility();
   renderTeamTabs();
   renderRoster();
   renderLineups();
@@ -483,6 +494,16 @@ function render() {
   renderDefenseDiamond();
   renderDefenseGrid();
   renderGameMode();
+}
+
+function renderSectionVisibility() {
+  elements.sectionNavButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.sectionTarget === activeSection);
+  });
+
+  elements.sectionPanels.forEach((panel) => {
+    panel.classList.toggle("hidden-section", panel.dataset.sectionPanel !== activeSection);
+  });
 }
 
 function renderTeamTabs() {
@@ -521,8 +542,12 @@ function renderRoster() {
       });
     });
 
-    row.querySelector('[data-direction="up"]').addEventListener("click", () => movePlayer(index, -1));
-    row.querySelector('[data-direction="down"]').addEventListener("click", () => movePlayer(index, 1));
+    const upButton = row.querySelector('[data-direction="up"]');
+    const downButton = row.querySelector('[data-direction="down"]');
+    upButton.textContent = "Up";
+    downButton.textContent = "Down";
+    upButton.addEventListener("click", () => movePlayer(index, -1));
+    downButton.addEventListener("click", () => movePlayer(index, 1));
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -794,7 +819,8 @@ function renderDefenseDiamond() {
     spot.style.top = top;
     const playerId = assignments[position];
     const battingNumber = getBattingNumber(team.players, playerId);
-    spot.innerHTML = `<span class="spot-label">${position}</span><span class="spot-value">${battingNumber || "-"}</span>`;
+    const playerName = playerId ? getPlayerName(team.players, playerId) : "";
+    spot.innerHTML = `<span class="spot-label">${position}</span><span class="spot-value">${battingNumber || "-"}</span><span class="spot-detail">${playerName}</span>`;
     elements.defenseDiamond.append(spot);
   });
 }
@@ -848,9 +874,9 @@ function renderGameDiamond(team) {
   const game = team.game;
   elements.gameDiamond.innerHTML = "";
   const spots = [
-    { key: "third", label: "3rd", left: "18%", top: "26%", value: getBattingNumber(team.players, game.bases.third) || "-" },
-    { key: "second", label: "2nd", left: "42%", top: "10%", value: getBattingNumber(team.players, game.bases.second) || "-" },
-    { key: "first", label: "1st", left: "66%", top: "26%", value: getBattingNumber(team.players, game.bases.first) || "-" },
+    { key: "third", label: "3rd", left: "18%", top: "26%", value: getBattingNumber(team.players, game.bases.third) || "-", detail: game.bases.third ? getPlayerName(team.players, game.bases.third) : "" },
+    { key: "second", label: "2nd", left: "42%", top: "10%", value: getBattingNumber(team.players, game.bases.second) || "-", detail: game.bases.second ? getPlayerName(team.players, game.bases.second) : "" },
+    { key: "first", label: "1st", left: "66%", top: "26%", value: getBattingNumber(team.players, game.bases.first) || "-", detail: game.bases.first ? getPlayerName(team.players, game.bases.first) : "" },
     { key: "home", label: "Batter", left: "42%", top: "74%", value: String((game.currentBatterIndex % team.players.length) + 1), detail: team.players[game.currentBatterIndex]?.name || "" },
   ];
 
