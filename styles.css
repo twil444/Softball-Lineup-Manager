@@ -338,6 +338,15 @@ select {
   border-top: 1px solid var(--line);
 }
 
+.subsection-content {
+  display: grid;
+  gap: 8px;
+}
+
+.subsection-content.is-collapsed {
+  display: none;
+}
+
 .defense-explainer,
 .defense-validation {
   display: grid;
@@ -932,6 +941,19 @@ select {
 
   .defense-header-actions {
     align-items: stretch;
+  }
+
+  .subsection-toggle,
+  .inning-refresh-button,
+  #rebuild-defense {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+
+  .legend,
+  .hint {
+    font-size: 0.82rem;
   }
 
   .defense-grid-row {

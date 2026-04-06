@@ -110,8 +110,9 @@ function rebalanceDefense(team, inningCount) {
   if (plan) {
     team.innings = { ...team.innings, ...plan.innings };
     team.refreshState = {};
+    return getDefenseValidation(team, inningCount);
   }
-  return getDefenseValidation(team, inningCount);
+  return null;
 }
 
 function rebalanceSingleInning(team, targetInning, inningCount) {
@@ -122,9 +123,9 @@ function rebalanceSingleInning(team, targetInning, inningCount) {
   const plan = buildDefensePlan(team, inningCount, { mode: "single", targetInning });
   if (plan?.innings?.[String(targetInning)]) {
     team.innings[String(targetInning)] = plan.innings[String(targetInning)];
+    return evaluateBenchRefreshImpact(team, targetInning, inningCount);
   }
-
-  return evaluateBenchRefreshImpact(team, targetInning, inningCount);
+  return { failed: true };
 }
 
 function buildDefensePlan(team, inningCount, options = {}) {
@@ -640,6 +641,7 @@ const refreshCycles = {};
 const elements = {
   sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
   sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
+  subsectionToggles: Array.from(document.querySelectorAll(".subsection-toggle")),
   teamTabs: document.querySelector("#team-tabs"),
   teamName: document.querySelector("#team-name"),
   rosterList: document.querySelector("#roster-list"),
@@ -710,7 +712,10 @@ elements.inningCount.addEventListener("change", (event) => {
 
 elements.rebuildDefense.addEventListener("click", () => {
   updateActiveTeam((team) => {
-    rebalanceDefense(team, state.innings);
+    const result = rebalanceDefense(team, state.innings);
+    if (!result) {
+      window.alert("Could not build a legal defense with the current settings. Try relaxing a few preferred positions or checking locked assignments.");
+    }
   });
 });
 
@@ -722,6 +727,18 @@ elements.sectionNavButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeSection = button.dataset.sectionTarget;
     renderSectionVisibility();
+  });
+});
+
+elements.subsectionToggles.forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = document.querySelector(`#${button.dataset.toggleTarget}`);
+    if (!target) {
+      return;
+    }
+    const isCollapsed = target.classList.toggle("is-collapsed");
+    button.textContent = isCollapsed ? "Show" : "Hide";
+    button.setAttribute("aria-expanded", String(!isCollapsed));
   });
 });
 
@@ -827,6 +844,7 @@ function renderDefenseExplainer() {
   const team = getActiveTeam();
   const rules = getTeamRules(team);
   const items = [
+    "This section is informational only. It explains what the suggestion engine is trying to do.",
     "Bench counts are targeted so nobody should sit more than one inning more than anyone else.",
     "Unlocked positions are capped at two appearances per player per game.",
     `${team.name === "Ponies" || rules.lockedPositions.length ? "Ponies pitcher/catcher assignments stay locked and are not auto-moved." : "All 10 field spots can be optimized for this team."}`,
@@ -997,6 +1015,10 @@ function renderLineups() {
     card.querySelector(".inning-refresh-button").addEventListener("click", () => {
       updateActiveTeam((activeTeam) => {
         const refreshImpact = rebalanceSingleInning(activeTeam, inning, state.innings);
+        if (refreshImpact?.failed) {
+          window.alert("Could not refresh this inning into a legal layout with the current rules. Try Rebuild Defense or adjust a locked assignment.");
+          return;
+        }
         if (refreshImpact) {
           const message = refreshImpact.suggestedInning
             ? `Bench balance is now ${refreshImpact.minBench}-${refreshImpact.maxBench}. To keep sit time more even, consider refreshing inning ${refreshImpact.suggestedInning} too.`
@@ -1080,8 +1102,17 @@ function renderLockedDefenseControls() {
 
   const header = document.createElement("div");
   header.className = "panel-header";
-  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div>`;
+  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div><button class="ghost-button subsection-toggle dynamic-toggle" type="button" aria-expanded="false">Show</button>`;
   elements.lockedDefensePanel.append(header);
+
+  const content = document.createElement("div");
+  content.className = "subsection-content is-collapsed";
+  const toggleButton = header.querySelector(".dynamic-toggle");
+  toggleButton.addEventListener("click", () => {
+    const isCollapsed = content.classList.toggle("is-collapsed");
+    toggleButton.textContent = isCollapsed ? "Show" : "Hide";
+    toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+  });
 
   rules.lockedPositions.forEach((position) => {
     const row = elements.lockedRowTemplate.content.firstElementChild.cloneNode(true);
@@ -1105,8 +1136,10 @@ function renderLockedDefenseControls() {
       container.append(slot);
     }
 
-    elements.lockedDefensePanel.append(row);
+    content.append(row);
   });
+
+  elements.lockedDefensePanel.append(content);
 }
 
 function renderDefenseGrid() {
