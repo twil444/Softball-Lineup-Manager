@@ -628,6 +628,7 @@ const elements = {
   lockedDefensePanel: document.querySelector("#locked-defense-panel"),
   defenseGrid: document.querySelector("#defense-grid"),
   playerDefenseGrid: document.querySelector("#player-defense-grid"),
+  defenseValidation: document.querySelector("#defense-validation"),
   preferencesList: document.querySelector("#preferences-list"),
   inningCount: document.querySelector("#inning-count"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
@@ -762,6 +763,7 @@ function render() {
   renderLineups();
   renderLockedDefenseControls();
   renderPreferences();
+  renderDefenseValidation();
   renderDefenseDiamond();
   renderDefenseGrid();
   renderPlayerDefenseGrid();
@@ -1079,6 +1081,27 @@ function renderLockedDefenseControls() {
   });
 
   elements.lockedDefensePanel.append(content);
+}
+
+function renderDefenseValidation() {
+  const team = getActiveTeam();
+  const issues = getDefenseValidation(team, state.innings);
+  elements.defenseValidation.innerHTML = "";
+
+  if (!issues.length) {
+    const item = document.createElement("div");
+    item.className = "validation-item validation-ok";
+    item.textContent = "No defense warnings right now.";
+    elements.defenseValidation.append(item);
+    return;
+  }
+
+  issues.forEach((issue) => {
+    const item = document.createElement("div");
+    item.className = `validation-item ${issue.severity === "error" ? "validation-error" : "validation-warn"}`;
+    item.textContent = issue.text;
+    elements.defenseValidation.append(item);
+  });
 }
 
 function renderDefenseGrid() {

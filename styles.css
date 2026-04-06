@@ -347,6 +347,35 @@ select {
   display: none;
 }
 
+.defense-validation {
+  display: grid;
+  gap: 8px;
+}
+
+.validation-item {
+  background: #f8fbfd;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.validation-ok {
+  background: #eef8ef;
+  border-color: #b9d7be;
+}
+
+.validation-warn {
+  background: #fff8e9;
+  border-color: #ecd28a;
+}
+
+.validation-error {
+  background: #fff0ec;
+  border-color: #efb6a7;
+}
+
 .defense-grid {
   display: grid;
   gap: 1px;
