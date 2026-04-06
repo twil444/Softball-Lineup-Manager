@@ -83,12 +83,17 @@
               <p class="section-label">Field View</p>
               <h3>Current Defensive Inning</h3>
             </div>
-            <label class="field compact-field">
-              <span>Show inning</span>
-              <select id="defense-visual-inning"></select>
-            </label>
+            <div class="subsection-actions">
+              <label class="field compact-field">
+                <span>Show inning</span>
+                <select id="defense-visual-inning"></select>
+              </label>
+              <button class="ghost-button subsection-toggle" type="button" data-target-id="defense-diamond-wrap">Show</button>
+            </div>
           </div>
-          <div id="defense-diamond" class="defense-diamond defense-diamond-large"></div>
+          <div id="defense-diamond-wrap" class="subsection-content is-collapsed">
+            <div id="defense-diamond" class="defense-diamond defense-diamond-large"></div>
+          </div>
         </div>
 
         <div id="locked-defense-panel" class="panel-subsection"></div>
@@ -99,8 +104,11 @@
               <p class="section-label">Inning Grid</p>
               <h3>Defense By Inning</h3>
             </div>
+            <button class="ghost-button subsection-toggle" type="button" data-target-id="defense-grid-wrap">Show</button>
           </div>
-          <div id="defense-grid" class="defense-grid"></div>
+          <div id="defense-grid-wrap" class="subsection-content is-collapsed">
+            <div id="defense-grid" class="defense-grid"></div>
+          </div>
         </div>
 
         <div class="panel-subsection">
@@ -109,8 +117,11 @@
               <p class="section-label">Player Grid</p>
               <h3>Players By Inning</h3>
             </div>
+            <button class="ghost-button subsection-toggle" type="button" data-target-id="player-defense-grid-wrap">Show</button>
           </div>
-          <div id="player-defense-grid" class="defense-grid player-defense-grid"></div>
+          <div id="player-defense-grid-wrap" class="subsection-content is-collapsed">
+            <div id="player-defense-grid" class="defense-grid player-defense-grid"></div>
+          </div>
         </div>
 
         <div class="panel-subsection">
@@ -119,8 +130,11 @@
               <p class="section-label">Edit Lineups</p>
               <h3>Inning Cards</h3>
             </div>
+            <button class="ghost-button subsection-toggle" type="button" data-target-id="lineup-grid-wrap">Hide</button>
           </div>
-          <div id="lineup-grid" class="lineup-grid"></div>
+          <div id="lineup-grid-wrap" class="subsection-content">
+            <div id="lineup-grid" class="lineup-grid"></div>
+          </div>
         </div>
       </section>
 

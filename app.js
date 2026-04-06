@@ -620,6 +620,7 @@ let draggedRosterIndex = null;
 const elements = {
   sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
   sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
+  subsectionToggles: Array.from(document.querySelectorAll(".subsection-toggle")),
   teamTabs: document.querySelector("#team-tabs"),
   teamName: document.querySelector("#team-name"),
   rosterList: document.querySelector("#roster-list"),
@@ -693,6 +694,12 @@ elements.sectionNavButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeSection = button.dataset.sectionTarget;
     renderSectionVisibility();
+  });
+});
+
+elements.subsectionToggles.forEach((button) => {
+  button.addEventListener("click", () => {
+    toggleSubsection(button);
   });
 });
 
@@ -770,6 +777,21 @@ function renderSectionVisibility() {
   elements.sectionPanels.forEach((panel) => {
     panel.classList.toggle("hidden-section", panel.dataset.sectionPanel !== activeSection);
   });
+}
+
+function toggleSubsection(button) {
+  const targetId = button.dataset.targetId;
+  if (!targetId) {
+    return;
+  }
+  const target = document.querySelector(`#${targetId}`);
+  if (!target) {
+    return;
+  }
+
+  const isCollapsed = target.classList.toggle("is-collapsed");
+  button.textContent = isCollapsed ? "Show" : "Hide";
+  button.setAttribute("aria-expanded", String(!isCollapsed));
 }
 
 function renderTeamTabs() {
@@ -1008,8 +1030,18 @@ function renderLockedDefenseControls() {
 
   const header = document.createElement("div");
   header.className = "panel-header";
-  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div>`;
+  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div><button class="ghost-button dynamic-subsection-toggle" type="button" aria-expanded="false">Show</button>`;
   elements.lockedDefensePanel.append(header);
+
+  const content = document.createElement("div");
+  content.id = "locked-defense-content";
+  content.className = "subsection-content is-collapsed";
+  const toggleButton = header.querySelector(".dynamic-subsection-toggle");
+  toggleButton.addEventListener("click", () => {
+    const isCollapsed = content.classList.toggle("is-collapsed");
+    toggleButton.textContent = isCollapsed ? "Show" : "Hide";
+    toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+  });
 
   rules.lockedPositions.forEach((position) => {
     const row = elements.lockedRowTemplate.content.firstElementChild.cloneNode(true);
@@ -1033,8 +1065,10 @@ function renderLockedDefenseControls() {
       container.append(slot);
     }
 
-    elements.lockedDefensePanel.append(row);
+    content.append(row);
   });
+
+  elements.lockedDefensePanel.append(content);
 }
 
 function renderDefenseGrid() {

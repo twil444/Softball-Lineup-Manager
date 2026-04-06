@@ -178,6 +178,13 @@ h1 {
   flex-wrap: wrap;
 }
 
+.subsection-actions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
 .team-tabs {
   display: flex;
   gap: 10px;
@@ -329,6 +336,15 @@ select {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+
+.subsection-content {
+  display: grid;
+  gap: 8px;
+}
+
+.subsection-content.is-collapsed {
+  display: none;
 }
 
 .defense-grid {
@@ -644,6 +660,13 @@ select {
   font-size: 0.8rem;
 }
 
+.subsection-toggle,
+.dynamic-subsection-toggle {
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+
 .inning-header h3 {
   margin-bottom: 0;
 }
@@ -836,7 +859,7 @@ select {
   .hero,
   .panel {
     border-radius: 18px;
-    padding: 8px;
+    padding: 7px;
   }
 
   .hero {
@@ -857,7 +880,7 @@ select {
   .roster-row {
     grid-template-columns: 20px 34px minmax(0, 1fr) auto;
     gap: 3px;
-    padding: 4px;
+    padding: 3px 4px;
   }
 
   .drag-handle {
@@ -890,6 +913,28 @@ select {
 
   .locked-selects {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .subsection-actions {
+    align-items: stretch;
+  }
+
+  .subsection-toggle,
+  .dynamic-subsection-toggle,
+  .inning-refresh-button {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 0.76rem;
+  }
+
+  .panel-subsection {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .legend,
+  .hint {
+    font-size: 0.82rem;
   }
 
   .defense-grid-row {
