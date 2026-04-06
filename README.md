@@ -7,11 +7,13 @@ This is a lightweight cross-platform lineup app built as a static web app.
 - Manages two separate teams
 - Works with flexible roster sizes
 - Lets you set batting order
+- Supports drag-to-reorder batting order in supported browsers, with move buttons as backup
 - Lets you assign 10 field positions for each inning
 - Balances bench innings as evenly as possible
 - Lets you define up to four preferred defensive options per player, including `OF` for any outfield spot
 - Still lets you manually adjust any inning
 - Includes offline game scoring with hits, walks, strikeouts, outs, inning tracking, and base runners
+- Includes a scorebook-style inning view tied to live scoring
 - Saves data in the browser so it stays on the device
 
 ## Positions included
@@ -32,7 +34,7 @@ This is a lightweight cross-platform lineup app built as a static web app.
 1. Open [index.html](C:\Users\signa\OneDrive\Softball\index.html) in a browser on Windows.
 2. Rename each team and each player.
 3. Add or remove players as needed for each roster.
-4. Adjust batting order with the up and down buttons.
+4. Adjust batting order with drag-and-drop or the move buttons.
 5. Use `Balance Defense` for a fairness-based rotation.
 6. Edit inning assignments manually as needed.
 7. Set player defensive preferences to guide the balancing suggestions.
@@ -54,7 +56,6 @@ This is a lightweight cross-platform lineup app built as a static web app.
 
 ## Good next upgrades
 
-- Drag-and-drop batting order
 - One-tap position rotation rules
 - Import from your existing Excel sheets
 - Printable game card view

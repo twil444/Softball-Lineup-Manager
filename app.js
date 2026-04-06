@@ -99,6 +99,7 @@ function createDefaultGame() {
       strikeouts: 0,
       runs: 0,
     },
+    scorebook: {},
     log: [],
   };
 }
@@ -311,6 +312,7 @@ function normalizeGame(savedGame, players) {
   game.totals.walks = Math.max(0, Number(savedGame?.totals?.walks) || 0);
   game.totals.strikeouts = Math.max(0, Number(savedGame?.totals?.strikeouts) || 0);
   game.totals.runs = Math.max(0, Number(savedGame?.totals?.runs) || 0);
+  game.scorebook = normalizeScorebook(savedGame?.scorebook, players);
   game.log = Array.isArray(savedGame?.log) ? savedGame.log.slice(0, 20) : [];
 
   BASES.forEach((base) => {
@@ -337,8 +339,22 @@ function normalizePreferences(preferences) {
   return preferences.filter((position, index) => PREFERENCE_OPTIONS.includes(position) && preferences.indexOf(position) === index).slice(0, 4);
 }
 
+function normalizeScorebook(scorebook, players) {
+  const normalized = {};
+  for (let inning = 1; inning <= 7; inning += 1) {
+    const inningKey = String(inning);
+    normalized[inningKey] = {};
+    players.forEach((player) => {
+      const entries = scorebook?.[inningKey]?.[player.id];
+      normalized[inningKey][player.id] = Array.isArray(entries) ? entries.slice(0, 6) : [];
+    });
+  }
+  return normalized;
+}
+
 let state = loadState();
 let activeSection = "batting";
+let draggedRosterIndex = null;
 
 const elements = {
   sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
@@ -381,6 +397,7 @@ const elements = {
   gameDiamond: document.querySelector("#game-diamond"),
   gameTotals: document.querySelector("#game-totals"),
   gameLog: document.querySelector("#game-log"),
+  scorebookGrid: document.querySelector("#scorebook-grid"),
   teamTabTemplate: document.querySelector("#team-tab-template"),
   rosterRowTemplate: document.querySelector("#roster-row-template"),
   inningCardTemplate: document.querySelector("#inning-card-template"),
@@ -494,6 +511,7 @@ function render() {
   renderDefenseDiamond();
   renderDefenseGrid();
   renderGameMode();
+  renderScorebook();
 }
 
 function renderSectionVisibility() {
@@ -532,6 +550,8 @@ function renderRoster() {
 
   team.players.forEach((player, index) => {
     const row = elements.rosterRowTemplate.content.firstElementChild.cloneNode(true);
+    row.draggable = true;
+    row.dataset.index = String(index);
     row.querySelector(".bat-spot").textContent = String(index + 1);
 
     const input = row.querySelector(".player-name");
@@ -557,6 +577,31 @@ function renderRoster() {
     removeButton.addEventListener("click", () => removePlayer(index));
     row.querySelector(".row-actions").append(removeButton);
 
+    row.addEventListener("dragstart", () => {
+      draggedRosterIndex = index;
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedRosterIndex = null;
+      row.classList.remove("dragging");
+      elements.rosterList.querySelectorAll(".drag-target").forEach((target) => target.classList.remove("drag-target"));
+    });
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("drag-target");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-target");
+    });
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-target");
+      if (draggedRosterIndex === null || draggedRosterIndex === index) {
+        return;
+      }
+      reorderPlayer(draggedRosterIndex, index);
+    });
+
     elements.rosterList.append(row);
   });
 }
@@ -569,6 +614,18 @@ function movePlayer(index, direction) {
     }
 
     [team.players[index], team.players[targetIndex]] = [team.players[targetIndex], team.players[index]];
+    team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex, team.players.length);
+  });
+}
+
+function reorderPlayer(fromIndex, toIndex) {
+  updateActiveTeam((team) => {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= team.players.length || toIndex >= team.players.length) {
+      return;
+    }
+
+    const [movedPlayer] = team.players.splice(fromIndex, 1);
+    team.players.splice(toIndex, 0, movedPlayer);
     team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex, team.players.length);
   });
 }
@@ -706,42 +763,37 @@ function renderLockedDefenseControls() {
 
 function renderDefenseGrid() {
   const team = getActiveTeam();
-  const table = document.createElement("div");
-  table.className = "defense-grid-table";
-
-  const headerRow = document.createElement("div");
-  headerRow.className = "defense-grid-row";
-  headerRow.append(createGridCell("Position", true));
+  elements.defenseGrid.innerHTML = "";
   for (let inning = 1; inning <= state.innings; inning += 1) {
-    headerRow.append(createGridCell(`Inning ${inning}`, true));
-  }
-  table.append(headerRow);
+    const inningKey = String(inning);
+    const assignments = team.innings[inningKey];
+    const benchIds = getBenchPlayers(team.players, assignments);
+    const card = document.createElement("article");
+    card.className = "defense-grid-card";
+    const title = document.createElement("h4");
+    title.textContent = `Inning ${inning}`;
+    const miniGrid = document.createElement("div");
+    miniGrid.className = "defense-grid-mini";
 
-  POSITIONS.forEach((position) => {
-    const row = document.createElement("div");
-    row.className = "defense-grid-row";
-    row.append(createGridCell(position, true));
-    for (let inning = 1; inning <= state.innings; inning += 1) {
-      const playerId = team.innings[String(inning)][position];
+    POSITIONS.forEach((position) => {
+      const playerId = assignments[position];
       const battingNumber = getBattingNumber(team.players, playerId);
       const playerName = playerId ? getPlayerName(team.players, playerId) : "Open";
       const cell = document.createElement("div");
-      cell.className = "defense-grid-cell";
-      cell.innerHTML = `<strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span>${playerName}</span>`;
-      row.append(cell);
-    }
-    table.append(row);
-  });
+      cell.className = "defense-grid-mini-cell";
+      cell.innerHTML = `<span class="spot-label">${position}</span><strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span class="spot-detail">${playerName}</span>`;
+      miniGrid.append(cell);
+    });
 
-  elements.defenseGrid.innerHTML = "";
-  elements.defenseGrid.append(table);
-}
+    const bench = document.createElement("div");
+    bench.className = "defense-grid-bench";
+    bench.textContent = benchIds.length
+      ? `Bench: ${benchIds.map((playerId) => `#${getBattingNumber(team.players, playerId)}`).join(", ")}`
+      : "Bench: None";
 
-function createGridCell(text, isHeader = false) {
-  const cell = document.createElement("div");
-  cell.className = `defense-grid-cell${isHeader ? " header" : ""}`;
-  cell.textContent = text;
-  return cell;
+    card.append(title, miniGrid, bench);
+    elements.defenseGrid.append(card);
+  }
 }
 
 function renderPreferences() {
@@ -923,6 +975,41 @@ function renderGameLog(game) {
   });
 }
 
+function renderScorebook() {
+  const team = getActiveTeam();
+  const table = document.createElement("div");
+  table.className = "scorebook-table";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "scorebook-row";
+  headerRow.append(createScorebookCell("Batter", true));
+  for (let inning = 1; inning <= state.innings; inning += 1) {
+    headerRow.append(createScorebookCell(String(inning), true));
+  }
+  table.append(headerRow);
+
+  team.players.forEach((player, index) => {
+    const row = document.createElement("div");
+    row.className = "scorebook-row";
+    row.append(createScorebookCell(`${index + 1}. ${player.name}`, true));
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const cellEntries = team.game.scorebook?.[String(inning)]?.[player.id] || [];
+      row.append(createScorebookCell(cellEntries.join(" ") || ""));
+    }
+    table.append(row);
+  });
+
+  elements.scorebookGrid.innerHTML = "";
+  elements.scorebookGrid.append(table);
+}
+
+function createScorebookCell(content, isHeader = false) {
+  const cell = document.createElement("div");
+  cell.className = `scorebook-cell${isHeader ? " header" : ""}`;
+  cell.textContent = content;
+  return cell;
+}
+
 function adjustGameNumber(key, delta, minimum = 0, maximum = Number.POSITIVE_INFINITY) {
   updateActiveTeam((team) => {
     const nextValue = Math.max(minimum, Math.min(maximum, team.game[key] + delta));
@@ -944,6 +1031,7 @@ function shiftCurrentBatter(delta) {
 function recordPlateAppearance(result) {
   updateActiveTeam((team) => {
     const batter = team.players[team.game.currentBatterIndex];
+    const inningKey = String(team.game.inning);
     if (!batter) {
       return;
     }
@@ -951,16 +1039,19 @@ function recordPlateAppearance(result) {
     if (result === "Hit") {
       team.game.totals.hits += 1;
       placeBatterOnFirst(team.game, batter.id);
+      addScorebookMark(team.game, batter.id, inningKey, "H");
       addGameLog(team.game, `${batter.name} hit`, describeBases(team, team.game));
     }
 
     if (result === "Walk") {
       team.game.totals.walks += 1;
       forceWalk(team.game, batter.id);
+      addScorebookMark(team.game, batter.id, inningKey, "BB");
       addGameLog(team.game, `${batter.name} walk`, describeBases(team, team.game));
     }
 
     if (result === "Out") {
+      addScorebookMark(team.game, batter.id, inningKey, "O");
       team.game.outs = Math.min(3, team.game.outs + 1);
       if (team.game.outs >= 3) {
         team.game.outs = 0;
@@ -973,6 +1064,7 @@ function recordPlateAppearance(result) {
 
     if (result === "Strikeout") {
       team.game.totals.strikeouts += 1;
+      addScorebookMark(team.game, batter.id, inningKey, "K");
       team.game.outs = Math.min(3, team.game.outs + 1);
       if (team.game.outs >= 3) {
         team.game.outs = 0;
@@ -985,6 +1077,14 @@ function recordPlateAppearance(result) {
 
     team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex + 1, team.players.length);
   });
+}
+
+function addScorebookMark(game, playerId, inningKey, mark) {
+  game.scorebook ||= {};
+  game.scorebook[inningKey] ||= {};
+  game.scorebook[inningKey][playerId] ||= [];
+  game.scorebook[inningKey][playerId].push(mark);
+  game.scorebook[inningKey][playerId] = game.scorebook[inningKey][playerId].slice(-4);
 }
 
 function placeBatterOnFirst(game, batterId) {

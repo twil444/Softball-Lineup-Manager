@@ -91,7 +91,7 @@ h1 {
   top: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 10px;
   padding: 8px;
@@ -254,7 +254,7 @@ select {
 }
 
 .roster-row {
-  grid-template-columns: 40px 1fr auto;
+  grid-template-columns: 34px 56px 1fr auto;
 }
 
 .bat-spot {
@@ -266,6 +266,23 @@ select {
 .row-actions {
   display: flex;
   gap: 8px;
+}
+
+.drag-handle {
+  min-height: 36px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: white;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.roster-row.dragging {
+  opacity: 0.55;
+}
+
+.roster-row.drag-target {
+  outline: 2px solid var(--accent);
 }
 
 .move-button {
@@ -297,40 +314,44 @@ select {
 
 .defense-grid {
   display: grid;
-  gap: 8px;
-  overflow-x: auto;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
 }
 
-.defense-grid-table {
-  display: grid;
-  gap: 1px;
-  background: var(--line);
+.defense-grid-card {
+  background: #f8fbfd;
   border: 1px solid var(--line);
   border-radius: 16px;
-  overflow: hidden;
+  padding: 10px;
 }
 
-.defense-grid-row {
-  display: grid;
-  grid-template-columns: 78px repeat(7, minmax(74px, 1fr));
-  gap: 1px;
-}
-
-.defense-grid-cell {
-  background: #f8fbfd;
-  padding: 6px;
-  min-height: 48px;
-  font-size: 0.82rem;
-}
-
-.defense-grid-cell.header {
-  background: #e8f0f8;
-  font-weight: 700;
+.defense-grid-card h4 {
+  margin: 0 0 8px;
   color: var(--accent);
 }
 
-.defense-grid-cell strong {
+.defense-grid-mini {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.defense-grid-mini-cell {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+}
+
+.defense-grid-mini-cell strong,
+.scorebook-cell strong {
   display: block;
+}
+
+.defense-grid-bench {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .locked-row {
@@ -611,6 +632,40 @@ select {
   gap: 10px;
 }
 
+.scorebook-grid {
+  display: grid;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.scorebook-table {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.scorebook-row {
+  display: grid;
+  grid-template-columns: 110px repeat(7, minmax(52px, 1fr));
+  gap: 1px;
+}
+
+.scorebook-cell {
+  background: #f8fbfd;
+  min-height: 52px;
+  padding: 6px;
+  font-size: 0.76rem;
+}
+
+.scorebook-cell.header {
+  background: #e8f0f8;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .preference-row {
   display: grid;
   grid-template-columns: 120px 1fr;
@@ -704,8 +759,7 @@ select {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .locked-row,
-  .defense-grid-row {
+  .locked-row {
     grid-template-columns: 1fr;
   }
 

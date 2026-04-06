@@ -30,8 +30,9 @@
     <nav class="section-nav" aria-label="Primary navigation">
       <button class="section-nav-button active" data-section-target="batting" type="button">Batting</button>
       <button class="section-nav-button" data-section-target="defense" type="button">Defense</button>
-      <button class="section-nav-button" data-section-target="preferences" type="button">Preferred</button>
       <button class="section-nav-button" data-section-target="scoring" type="button">Scoring</button>
+      <button class="section-nav-button" data-section-target="scorebook" type="button">Scorebook</button>
+      <button class="section-nav-button" data-section-target="preferences" type="button">Preferred</button>
     </nav>
 
     <main class="layout">
@@ -215,6 +216,16 @@
           </div>
         </div>
       </section>
+
+      <section class="panel scorebook-panel" data-section-panel="scorebook">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Game Book</p>
+            <h2>Traditional Scorebook</h2>
+          </div>
+        </div>
+        <div id="scorebook-grid" class="scorebook-grid"></div>
+      </section>
     </main>
   </div>
 
@@ -225,6 +236,7 @@
   <template id="roster-row-template">
     <div class="roster-row">
       <span class="bat-spot"></span>
+      <button class="drag-handle" type="button" aria-label="Drag to reorder">Drag</button>
       <input class="player-name" type="text" maxlength="40">
       <div class="row-actions">
         <button class="move-button" data-direction="up" type="button" aria-label="Move player up">▲</button>
