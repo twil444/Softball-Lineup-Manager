@@ -176,8 +176,9 @@ function rebalanceDefense(team, inningCount) {
       });
 
     const remainingPlayers = [...availablePlayers];
+    const previousAssignments = inning > 1 ? team.innings[String(inning - 1)] : null;
     optimizedPositions.forEach((position) => {
-      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts);
+      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts, previousAssignments);
       assignments[position] = player?.id || "";
       if (player) {
         fieldCounts[player.id] += 1;
@@ -195,12 +196,16 @@ function getTeamRules(team) {
   return TEAM_RULES[team.id] || { optimizePositions: [...POSITIONS], lockedPositions: [] };
 }
 
-function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts) {
+function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts, previousAssignments) {
   if (!remainingPlayers.length) {
     return null;
   }
 
-  const preferredPlayers = remainingPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
+  const avoidRepeatPlayers = previousAssignments
+    ? remainingPlayers.filter((player) => previousAssignments[position] !== player.id)
+    : remainingPlayers;
+
+  const preferredPlayers = avoidRepeatPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
   if (preferredPlayers.length) {
     preferredPlayers.sort((a, b) => {
       const preferenceDelta = getPreferenceRank(a.preferences, position) - getPreferenceRank(b.preferences, position);
@@ -216,7 +221,8 @@ function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positi
     return preferredPlayers[0];
   }
 
-  return [...remainingPlayers].sort((a, b) => {
+  const fallbackPool = avoidRepeatPlayers.length ? avoidRepeatPlayers : remainingPlayers;
+  return [...fallbackPool].sort((a, b) => {
     const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
     if (varietyDelta !== 0) {
       return varietyDelta;
@@ -903,16 +909,16 @@ function renderDefenseDiamond() {
   elements.defenseDiamond.innerHTML = "";
 
   const coords = {
-    P: ["42%", "55%"],
-    C: ["42%", "79%"],
-    "1B": ["66%", "60%"],
-    "2B": ["57%", "46%"],
-    "3B": ["18%", "60%"],
-    SS: ["28%", "46%"],
-    LF: ["12%", "22%"],
-    LCF: ["30%", "13%"],
-    RCF: ["54%", "13%"],
-    RF: ["72%", "22%"],
+    P: ["44%", "54%"],
+    C: ["44%", "76%"],
+    "1B": ["67%", "56%"],
+    "2B": ["57%", "41%"],
+    "3B": ["21%", "56%"],
+    SS: ["31%", "41%"],
+    LF: ["13%", "18%"],
+    LCF: ["31%", "10%"],
+    RCF: ["57%", "10%"],
+    RF: ["75%", "18%"],
   };
 
   POSITIONS.forEach((position) => {
@@ -978,10 +984,10 @@ function renderGameDiamond(team) {
   const game = team.game;
   elements.gameDiamond.innerHTML = "";
   const spots = [
-    { key: "third", label: "3rd", left: "18%", top: "26%", value: getBattingNumber(team.players, game.bases.third) || "-", detail: game.bases.third ? getPlayerName(team.players, game.bases.third) : "" },
-    { key: "second", label: "2nd", left: "42%", top: "10%", value: getBattingNumber(team.players, game.bases.second) || "-", detail: game.bases.second ? getPlayerName(team.players, game.bases.second) : "" },
-    { key: "first", label: "1st", left: "66%", top: "26%", value: getBattingNumber(team.players, game.bases.first) || "-", detail: game.bases.first ? getPlayerName(team.players, game.bases.first) : "" },
-    { key: "home", label: "Batter", left: "42%", top: "74%", value: String((game.currentBatterIndex % team.players.length) + 1), detail: team.players[game.currentBatterIndex]?.name || "" },
+    { key: "third", label: "3rd", left: "23%", top: "31%", value: getBattingNumber(team.players, game.bases.third) || "-", detail: game.bases.third ? getPlayerName(team.players, game.bases.third) : "" },
+    { key: "second", label: "2nd", left: "44%", top: "13%", value: getBattingNumber(team.players, game.bases.second) || "-", detail: game.bases.second ? getPlayerName(team.players, game.bases.second) : "" },
+    { key: "first", label: "1st", left: "65%", top: "31%", value: getBattingNumber(team.players, game.bases.first) || "-", detail: game.bases.first ? getPlayerName(team.players, game.bases.first) : "" },
+    { key: "home", label: "Batter", left: "44%", top: "72%", value: String((game.currentBatterIndex % team.players.length) + 1), detail: team.players[game.currentBatterIndex]?.name || "" },
   ];
 
   spots.forEach((spotData) => {
