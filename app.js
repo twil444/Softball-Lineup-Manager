@@ -395,7 +395,7 @@ const elements = {
   lineupGrid: document.querySelector("#lineup-grid"),
   lockedDefensePanel: document.querySelector("#locked-defense-panel"),
   defenseGrid: document.querySelector("#defense-grid"),
-  summaryStats: document.querySelector("#summary-stats"),
+  playerDefenseGrid: document.querySelector("#player-defense-grid"),
   preferencesList: document.querySelector("#preferences-list"),
   inningCount: document.querySelector("#inning-count"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
@@ -536,10 +536,10 @@ function render() {
   renderRoster();
   renderLineups();
   renderLockedDefenseControls();
-  renderSummary();
   renderPreferences();
   renderDefenseDiamond();
   renderDefenseGrid();
+  renderPlayerDefenseGrid();
   renderGameMode();
   renderScorebook();
 }
@@ -844,6 +844,36 @@ function renderDefenseGrid() {
     }
 
     elements.defenseGrid.append(row);
+  });
+}
+
+function renderPlayerDefenseGrid() {
+  const team = getActiveTeam();
+  elements.playerDefenseGrid.innerHTML = "";
+
+  const header = document.createElement("div");
+  header.className = "defense-grid-row defense-grid-header-row player-defense-header-row";
+  header.append(createDefenseGridCell("Player", true));
+  for (let inning = 1; inning <= state.innings; inning += 1) {
+    header.append(createDefenseGridCell(`In ${inning}`, true));
+  }
+  elements.playerDefenseGrid.append(header);
+
+  team.players.forEach((player, index) => {
+    const row = document.createElement("div");
+    row.className = "defense-grid-row player-defense-row";
+    row.append(createDefenseGridCell(`#${index + 1} ${getShortPlayerName(team.players, player.id)}`, true));
+
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const assignments = team.innings[String(inning)];
+      const position = POSITIONS.find((slot) => assignments[slot] === player.id);
+      const cell = document.createElement("div");
+      cell.className = `defense-grid-cell${position ? "" : " bench"}`;
+      cell.innerHTML = `<strong>${position || "BN"}</strong>`;
+      row.append(cell);
+    }
+
+    elements.playerDefenseGrid.append(row);
   });
 }
 
@@ -1493,67 +1523,6 @@ function describeBases(team, game) {
 
 function formatBase(base) {
   return base === "first" ? "1st" : base === "second" ? "2nd" : "3rd";
-}
-
-function renderSummary() {
-  const team = getActiveTeam();
-  elements.summaryStats.innerHTML = "";
-
-  const stats = team.players.map((player) => {
-    const appearances = { field: 0, bench: 0 };
-    const positions = [];
-
-    for (let inning = 1; inning <= state.innings; inning += 1) {
-      const assignments = team.innings[String(inning)];
-      const position = POSITIONS.find((slot) => assignments[slot] === player.id);
-      if (position) {
-        appearances.field += 1;
-        positions.push(position);
-      } else {
-        appearances.bench += 1;
-      }
-    }
-
-    return { player, appearances, positions };
-  });
-
-  const benchCounts = stats.map(({ appearances }) => appearances.bench);
-  const maxBench = Math.max(...benchCounts, 0);
-  const minBench = Math.min(...benchCounts, 0);
-
-  stats.forEach(({ player, appearances, positions }) => {
-    const card = document.createElement("article");
-    card.className = "summary-card";
-    if (appearances.bench === maxBench && maxBench - minBench > 1) {
-      card.classList.add("imbalance");
-    }
-
-    const positionCounts = positions.reduce((map, position) => {
-      map[position] = (map[position] || 0) + 1;
-      return map;
-    }, {});
-
-    const topPositions = Object.entries(positionCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([position, count]) => `${position} x${count}`)
-      .join(", ") || "No field innings yet";
-
-    const details = document.createElement("div");
-    const title = document.createElement("h3");
-    title.textContent = player.name || "Unnamed player";
-    const description = document.createElement("p");
-    description.textContent = topPositions;
-    details.append(title, description);
-
-    const meta = document.createElement("div");
-    meta.className = "summary-meta";
-    const spreadText = maxBench - minBench > 0 ? `<br><strong>Spread:</strong> ${minBench}-${maxBench}` : "";
-    meta.innerHTML = `<strong>Field:</strong> ${appearances.field}<br><strong>Bench:</strong> ${appearances.bench}${spreadText}`;
-
-    card.append(details, meta);
-    elements.summaryStats.append(card);
-  });
 }
 
 render();

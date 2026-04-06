@@ -84,18 +84,6 @@
         <div class="panel-subsection">
           <div class="panel-header">
             <div>
-              <p class="section-label">Inning Grid</p>
-              <h3>Defense By Inning</h3>
-            </div>
-          </div>
-          <div id="defense-grid" class="defense-grid"></div>
-        </div>
-
-        <div id="locked-defense-panel" class="panel-subsection"></div>
-
-        <div class="panel-subsection">
-          <div class="panel-header">
-            <div>
               <p class="section-label">Field View</p>
               <h3>Current Defensive Inning</h3>
             </div>
@@ -104,7 +92,29 @@
               <select id="defense-visual-inning"></select>
             </label>
           </div>
-          <div id="defense-diamond" class="defense-diamond"></div>
+          <div id="defense-diamond" class="defense-diamond defense-diamond-large"></div>
+        </div>
+
+        <div id="locked-defense-panel" class="panel-subsection"></div>
+
+        <div class="panel-subsection">
+          <div class="panel-header">
+            <div>
+              <p class="section-label">Inning Grid</p>
+              <h3>Defense By Inning</h3>
+            </div>
+          </div>
+          <div id="defense-grid" class="defense-grid"></div>
+        </div>
+
+        <div class="panel-subsection">
+          <div class="panel-header">
+            <div>
+              <p class="section-label">Player Grid</p>
+              <h3>Players By Inning</h3>
+            </div>
+          </div>
+          <div id="player-defense-grid" class="defense-grid player-defense-grid"></div>
         </div>
 
         <div class="panel-subsection">
@@ -116,17 +126,6 @@
           </div>
           <div id="lineup-grid" class="lineup-grid"></div>
         </div>
-      </section>
-
-      <section class="panel summary-panel" data-section-panel="defense">
-        <div class="panel-header">
-          <div>
-            <p class="section-label">Summary</p>
-            <h2>Playing Time</h2>
-          </div>
-        </div>
-
-        <div id="summary-stats" class="summary-stats"></div>
       </section>
 
       <section class="panel preferences-panel" data-section-panel="preferences">
