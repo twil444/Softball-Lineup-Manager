@@ -1135,12 +1135,27 @@ function renderDefenseGrid() {
       const playerId = rowKey.startsWith("BENCH_")
         ? benchIds[Number(rowKey.split("_")[1]) - 1] || ""
         : inningAssignments[rowKey];
-      const battingNumber = getBattingNumber(team.players, playerId);
-      const shortName = playerId ? getShortPlayerName(team.players, playerId) : "";
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${rowKey.startsWith("BENCH_") ? " bench" : ""}`;
       applyDuplicateGroupClass(cell, duplicateGroups[playerId]);
-      cell.innerHTML = `<strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span>${shortName}</span>`;
+      const select = document.createElement("select");
+      select.className = "grid-player-select";
+      populatePlayerOptions(
+        select,
+        team.players,
+        playerId,
+        rowKey.startsWith("BENCH_") ? "Bench" : "Open",
+      );
+      if (rules.lockedPositions.includes(rowKey)) {
+        select.disabled = true;
+      } else {
+        select.addEventListener("change", (event) => {
+          updateActiveTeam((activeTeam) => {
+            applyDefenseGridSelection(activeTeam, String(inning), rowKey, event.target.value);
+          });
+        });
+      }
+      cell.append(select);
       row.append(cell);
     }
 
@@ -1636,6 +1651,38 @@ function updateRunnerScorebookProgress(game, playerId, inningKey, reachedBase, s
   if (scored) {
     entry.scored = true;
   }
+}
+
+function applyDefenseGridSelection(team, inningKey, rowKey, chosenId) {
+  const assignments = team.innings[inningKey];
+  if (!assignments) {
+    return;
+  }
+
+  if (rowKey.startsWith("BENCH_")) {
+    const benchIndex = Number(rowKey.split("_")[1]) - 1;
+    const currentBench = getBenchPlayers(team.players, assignments);
+    const replacementId = currentBench[benchIndex] || "";
+    POSITIONS.forEach((position) => {
+      if (assignments[position] === chosenId) {
+        assignments[position] = replacementId;
+      }
+    });
+    return;
+  }
+
+  const currentId = assignments[rowKey] || "";
+  if (!chosenId) {
+    assignments[rowKey] = "";
+    return;
+  }
+
+  const existingPosition = POSITIONS.find((position) => assignments[position] === chosenId);
+  if (existingPosition && existingPosition !== rowKey) {
+    assignments[existingPosition] = currentId;
+  }
+
+  assignments[rowKey] = chosenId;
 }
 
 function markRunnerScorebookOut(game, playerId, inningKey) {

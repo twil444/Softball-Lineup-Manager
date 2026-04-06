@@ -436,6 +436,18 @@ select {
   line-height: 1.15;
 }
 
+.grid-player-select {
+  min-height: 34px;
+  padding: 4px 6px;
+  font-size: 0.68rem;
+  border-radius: 10px;
+}
+
+.grid-player-select:disabled {
+  background: #edf2f7;
+  color: var(--muted);
+}
+
 .locked-row {
   display: grid;
   grid-template-columns: 82px 1fr;
@@ -1003,6 +1015,12 @@ select {
 
   .bench-list {
     text-align: left;
+  }
+
+  .grid-player-select {
+    min-height: 32px;
+    padding: 3px 4px;
+    font-size: 0.64rem;
   }
 
   .inning-card-actions {
