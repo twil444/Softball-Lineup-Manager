@@ -654,7 +654,21 @@ select {
   flex-wrap: wrap;
 }
 
+.inning-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
 .inning-refresh-button {
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+
+.inning-collapse-button {
   padding: 6px 10px;
   border-radius: 12px;
   font-size: 0.8rem;
@@ -682,6 +696,10 @@ select {
   display: grid;
   gap: 4px;
   grid-template-columns: 1fr;
+}
+
+.inning-card-content.is-collapsed {
+  display: none;
 }
 
 .position-row {
@@ -956,5 +974,9 @@ select {
 
   .bench-list {
     text-align: left;
+  }
+
+  .inning-card-actions {
+    justify-content: space-between;
   }
 }

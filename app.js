@@ -944,6 +944,16 @@ function renderLineups() {
     const duplicateGroups = getDuplicateAssignmentGroups(assignments);
     const card = elements.inningCardTemplate.content.firstElementChild.cloneNode(true);
     card.querySelector("h3").textContent = `Inning ${inning}`;
+    const collapseButton = card.querySelector(".inning-collapse-button");
+    const cardContent = card.querySelector(".inning-card-content");
+    if (inning > 1) {
+      cardContent.classList.add("is-collapsed");
+      collapseButton.textContent = "Show";
+    }
+    collapseButton.addEventListener("click", () => {
+      const isCollapsed = cardContent.classList.toggle("is-collapsed");
+      collapseButton.textContent = isCollapsed ? "Show" : "Hide";
+    });
     card.querySelector(".inning-refresh-button").addEventListener("click", () => {
       updateActiveTeam((activeTeam) => {
         const refreshImpact = rebalanceSingleInning(activeTeam, inning, state.innings);
