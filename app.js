@@ -100,6 +100,7 @@ function createDefaultGame() {
       runs: 0,
     },
     scorebook: {},
+    plateAppearanceHistory: [],
     log: [],
   };
 }
@@ -313,6 +314,7 @@ function normalizeGame(savedGame, players) {
   game.totals.strikeouts = Math.max(0, Number(savedGame?.totals?.strikeouts) || 0);
   game.totals.runs = Math.max(0, Number(savedGame?.totals?.runs) || 0);
   game.scorebook = normalizeScorebook(savedGame?.scorebook, players);
+  game.plateAppearanceHistory = Array.isArray(savedGame?.plateAppearanceHistory) ? savedGame.plateAppearanceHistory.slice(-20) : [];
   game.log = Array.isArray(savedGame?.log) ? savedGame.log.slice(0, 20) : [];
 
   BASES.forEach((base) => {
@@ -586,15 +588,15 @@ function renderRoster() {
 
     const upButton = row.querySelector('[data-direction="up"]');
     const downButton = row.querySelector('[data-direction="down"]');
-    upButton.textContent = "Up";
-    downButton.textContent = "Down";
+    upButton.textContent = "^";
+    downButton.textContent = "v";
     upButton.addEventListener("click", () => movePlayer(index, -1));
     downButton.addEventListener("click", () => movePlayer(index, 1));
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "move-button remove-button";
-    removeButton.textContent = "Remove";
+    removeButton.textContent = "X";
     removeButton.setAttribute("aria-label", `Remove ${player.name || "player"}`);
     removeButton.addEventListener("click", () => removePlayer(index));
     row.querySelector(".row-actions").append(removeButton);
@@ -777,6 +779,11 @@ function renderLockedDefenseControls() {
     const container = row.querySelector(".locked-selects");
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
+      const slot = document.createElement("div");
+      slot.className = "locked-slot";
+      const inningLabel = document.createElement("span");
+      inningLabel.className = "locked-inning-label";
+      inningLabel.textContent = `In ${inning}`;
       const select = document.createElement("select");
       populatePlayerOptions(select, team.players, team.innings[String(inning)][position]);
       select.addEventListener("change", (event) => {
@@ -784,7 +791,8 @@ function renderLockedDefenseControls() {
           activeTeam.innings[String(inning)][position] = event.target.value;
         });
       });
-      container.append(select);
+      slot.append(inningLabel, select);
+      container.append(slot);
     }
 
     elements.lockedDefensePanel.append(row);
@@ -1163,6 +1171,10 @@ function adjustGameNumber(key, delta, minimum = 0, maximum = Number.POSITIVE_INF
 
 function shiftCurrentBatter(delta) {
   updateActiveTeam((team) => {
+    if (delta < 0 && team.game.plateAppearanceHistory?.length) {
+      restorePreviousPlateAppearance(team.game);
+      return;
+    }
     team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex + delta, team.players.length);
   });
 }
@@ -1174,6 +1186,8 @@ function recordPlateAppearance(result) {
     if (!batter) {
       return;
     }
+
+    pushPlateAppearanceSnapshot(team.game);
 
     if (result === "Hit") {
       team.game.totals.hits += 1;
@@ -1216,6 +1230,39 @@ function recordPlateAppearance(result) {
 
     team.game.currentBatterIndex = clampBatterIndex(team.game.currentBatterIndex + 1, team.players.length);
   });
+}
+
+function pushPlateAppearanceSnapshot(game) {
+  game.plateAppearanceHistory ||= [];
+  game.plateAppearanceHistory.push(JSON.parse(JSON.stringify({
+    inning: game.inning,
+    outs: game.outs,
+    teamScore: game.teamScore,
+    opponentScore: game.opponentScore,
+    currentBatterIndex: game.currentBatterIndex,
+    bases: game.bases,
+    totals: game.totals,
+    scorebook: game.scorebook,
+    log: game.log,
+  })));
+  game.plateAppearanceHistory = game.plateAppearanceHistory.slice(-20);
+}
+
+function restorePreviousPlateAppearance(game) {
+  const previous = game.plateAppearanceHistory?.pop();
+  if (!previous) {
+    return;
+  }
+
+  game.inning = previous.inning;
+  game.outs = previous.outs;
+  game.teamScore = previous.teamScore;
+  game.opponentScore = previous.opponentScore;
+  game.currentBatterIndex = previous.currentBatterIndex;
+  game.bases = previous.bases;
+  game.totals = previous.totals;
+  game.scorebook = previous.scorebook;
+  game.log = previous.log;
 }
 
 function addScorebookMark(game, playerId, inningKey, mark) {

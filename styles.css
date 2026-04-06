@@ -30,9 +30,9 @@ select {
 }
 
 .app-shell {
-  max-width: 1280px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 10px;
+  padding: 6px;
 }
 
 .hero,
@@ -49,7 +49,7 @@ select {
   gap: 14px;
   align-items: flex-start;
   padding: 16px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .eyebrow,
@@ -93,8 +93,8 @@ h1 {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
-  margin-bottom: 10px;
-  padding: 8px;
+  margin-bottom: 6px;
+  padding: 6px 0;
   background: rgba(238, 244, 247, 0.96);
   backdrop-filter: blur(10px);
 }
@@ -153,7 +153,7 @@ h1 {
 }
 
 .panel {
-  padding: 14px;
+  padding: 10px;
 }
 
 .panel-header,
@@ -255,6 +255,8 @@ select {
 
 .roster-row {
   grid-template-columns: 34px 56px 1fr auto;
+  gap: 8px;
+  padding: 8px;
 }
 
 .roster-row input {
@@ -273,12 +275,14 @@ select {
 }
 
 .drag-handle {
-  min-height: 36px;
+  min-height: 32px;
   border: 1px dashed var(--line);
   border-radius: 12px;
   background: white;
   color: var(--accent);
   font-weight: 700;
+  padding: 0 6px;
+  font-size: 0.74rem;
 }
 
 .roster-row.dragging {
@@ -301,14 +305,14 @@ select {
   width: 32px;
   min-width: 32px;
   height: 32px;
-  padding: 0 6px;
-  font-size: 0.74rem;
+  padding: 0;
+  font-size: 0.82rem;
 }
 
 .remove-button {
-  min-width: 54px;
+  min-width: 32px;
   height: 32px;
-  padding: 0 10px;
+  padding: 0;
   background: #fff3ef;
   border: 1px solid #f0c7bb;
   color: var(--warning);
@@ -335,15 +339,15 @@ select {
 
 .defense-grid-row {
   display: grid;
-  grid-template-columns: 52px repeat(7, minmax(70px, 1fr));
+  grid-template-columns: 42px repeat(7, minmax(58px, 1fr));
   gap: 1px;
 }
 
 .defense-grid-cell {
   background: #f8fbfd;
-  padding: 6px;
-  min-height: 48px;
-  font-size: 0.74rem;
+  padding: 4px;
+  min-height: 40px;
+  font-size: 0.68rem;
 }
 
 .defense-grid-cell.header {
@@ -382,6 +386,18 @@ select {
   display: grid;
   grid-template-columns: repeat(7, minmax(74px, 1fr));
   gap: 6px;
+}
+
+.locked-slot {
+  display: grid;
+  gap: 4px;
+}
+
+.locked-inning-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-align: center;
 }
 
 .game-panel {
@@ -455,7 +471,7 @@ select {
 .defense-diamond,
 .game-diamond {
   position: relative;
-  min-height: 260px;
+  min-height: 190px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background:
@@ -468,7 +484,7 @@ select {
 .game-diamond::before {
   content: "";
   position: absolute;
-  inset: 34px;
+  inset: 24px;
   border: 3px solid rgba(255, 255, 255, 0.9);
   transform: rotate(45deg);
 }
@@ -476,8 +492,8 @@ select {
 .defense-spot,
 .game-spot {
   position: absolute;
-  width: 68px;
-  min-height: 44px;
+  width: 56px;
+  min-height: 36px;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(23, 74, 124, 0.15);
   border-radius: 16px;
@@ -487,12 +503,12 @@ select {
 }
 
 .game-spot {
-  width: 84px;
+  width: 70px;
 }
 
 .spot-label {
   display: block;
-  font-size: 0.7rem;
+  font-size: 0.56rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -500,14 +516,14 @@ select {
 
 .spot-value {
   display: block;
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 800;
   color: var(--accent);
 }
 
 .spot-detail {
   display: block;
-  font-size: 0.64rem;
+  font-size: 0.52rem;
   color: var(--muted);
   line-height: 1.15;
 }
@@ -656,15 +672,15 @@ select {
 
 .scorebook-row {
   display: grid;
-  grid-template-columns: 110px repeat(7, minmax(52px, 1fr));
+  grid-template-columns: 118px repeat(7, minmax(46px, 1fr));
   gap: 1px;
 }
 
 .scorebook-cell {
   background: #f8fbfd;
-  min-height: 64px;
+  min-height: 56px;
   padding: 4px;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
 }
 
 .scorebook-cell.header {
@@ -685,13 +701,13 @@ select {
 }
 
 .scorebook-diamond {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
 }
 
 .scorebook-note {
-  font-size: 0.68rem;
+  font-size: 0.58rem;
   color: var(--muted);
   line-height: 1.1;
 }
@@ -760,7 +776,7 @@ select {
   .hero,
   .panel {
     border-radius: 18px;
-    padding: 12px;
+    padding: 8px;
   }
 
   .hero {
@@ -782,27 +798,28 @@ select {
 
   .roster-row {
     grid-template-columns: 26px 42px minmax(0, 1fr) auto;
-    gap: 6px;
-    padding: 8px;
+    gap: 4px;
+    padding: 6px;
   }
 
   .drag-handle {
-    min-height: 30px;
-    font-size: 0.72rem;
-    padding: 0 4px;
+    min-height: 28px;
+    font-size: 0.64rem;
+    padding: 0 2px;
   }
 
   .bat-spot {
-    font-size: 0.9rem;
+    font-size: 0.82rem;
   }
 
   .player-name {
-    min-height: 34px;
-    padding: 6px 8px;
+    min-height: 30px;
+    padding: 4px 6px;
+    font-size: 0.9rem;
   }
 
   .row-actions {
-    gap: 4px;
+    gap: 2px;
   }
 
   .inning-positions {
@@ -822,7 +839,7 @@ select {
   }
 
   .defense-grid-row {
-    grid-template-columns: 44px repeat(7, minmax(62px, 1fr));
+    grid-template-columns: 36px repeat(7, minmax(52px, 1fr));
   }
 
   .scoreboard {
