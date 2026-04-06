@@ -63,7 +63,7 @@ function createDefaultTeam(id, name, playerNames) {
     innings[String(inning)] = createEmptyAssignments();
   }
 
-  const team = { id, name, players, innings, game: createDefaultGame(), refreshState: {} };
+  const team = { id, name, players, innings, game: createDefaultGame() };
   if (TEAM_RULES[id]?.lockedPositions?.length) {
     for (let inning = 1; inning <= 7; inning += 1) {
       team.innings[String(inning)].P = players[0]?.id || "";
@@ -106,280 +106,261 @@ function createDefaultGame() {
 }
 
 function rebalanceDefense(team, inningCount) {
-  const plan = buildDefensePlan(team, inningCount, { mode: "full" });
-  if (plan) {
-    team.innings = { ...team.innings, ...plan.innings };
-    team.refreshState = {};
-    return getDefenseValidation(team, inningCount);
-  }
-  return null;
-}
-
-function rebalanceSingleInning(team, targetInning, inningCount) {
-  team.refreshState ||= {};
-  team.refreshState[String(targetInning)] = (team.refreshState[String(targetInning)] || 0) + 1;
-  refreshCycles[`${team.id}-${targetInning}`] = (refreshCycles[`${team.id}-${targetInning}`] || 0) + 1;
-
-  const plan = buildDefensePlan(team, inningCount, { mode: "single", targetInning });
-  if (plan?.innings?.[String(targetInning)]) {
-    team.innings[String(targetInning)] = plan.innings[String(targetInning)];
-    return evaluateBenchRefreshImpact(team, targetInning, inningCount);
-  }
-  return { failed: true };
-}
-
-function buildDefensePlan(team, inningCount, options = {}) {
-  const players = team.players;
-  const rules = getTeamRules(team);
-  const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
-  const tracker = createDefenseTracker(players);
-  const targetBenchCounts = computeTargetBenchCounts(
-    players,
-    benchSlotsPerInning * inningCount,
-    options.mode === "single" ? getBenchCountsExcludingInning(team, inningCount, options.targetInning) : null,
-  );
-  const planInnings = options.mode === "single" ? { ...team.innings } : {};
-
-  if (options.mode === "single") {
-    for (let inning = 1; inning <= inningCount; inning += 1) {
-      if (inning === options.targetInning) {
-        continue;
-      }
-      applyExistingInningToTracker(team, tracker, inning);
-    }
-  }
-
-  for (let inning = 1; inning <= inningCount; inning += 1) {
-    if (options.mode === "single" && inning !== options.targetInning) {
-      continue;
-    }
-
-    const assignments = buildInningAssignments(team, inning, inningCount, tracker, targetBenchCounts, { ...options, generatedInnings: planInnings });
-    if (!assignments) {
-      return null;
-    }
-
-    planInnings[String(inning)] = assignments;
-    applyPlannedInningToTracker(team, tracker, inning, assignments);
-  }
-
-  return { innings: planInnings };
-}
-
-function buildInningAssignments(team, inning, inningCount, tracker, targetBenchCounts, options = {}) {
   const players = team.players;
   const rules = getTeamRules(team);
   const optimizedPositions = rules.optimizePositions;
   const lockedPositions = rules.lockedPositions;
   const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
-  const inningKey = String(inning);
-  const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
-  const assignments = createEmptyAssignments();
+  const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const fieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const positionCounts = Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(POSITIONS.map((position) => [position, 0]))]));
+  const lastBenchedInning = Object.fromEntries(players.map((player) => [player.id, -999]));
 
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    const inningKey = String(inning);
+    const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
+    const assignments = createEmptyAssignments();
+    lockedPositions.forEach((position) => {
+      assignments[position] = existingAssignments[position] || "";
+    });
+    const lockedIds = new Set(lockedPositions.map((position) => assignments[position]).filter(Boolean));
+    const benchedPlayers = benchSlotsPerInning > 0
+      ? [...players]
+          .filter((player) => !lockedIds.has(player.id))
+          .sort((a, b) => {
+            const benchDelta = benchCounts[a.id] - benchCounts[b.id];
+            if (benchDelta !== 0) {
+              return benchDelta;
+            }
+
+            const fieldDelta = fieldCounts[b.id] - fieldCounts[a.id];
+            if (fieldDelta !== 0) {
+              return fieldDelta;
+            }
+
+            const lastBenchDelta = lastBenchedInning[a.id] - lastBenchedInning[b.id];
+            if (lastBenchDelta !== 0) {
+              return lastBenchDelta;
+            }
+
+            return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+          })
+          .slice(0, benchSlotsPerInning)
+      : [];
+
+    benchedPlayers.forEach((player) => {
+      benchCounts[player.id] += 1;
+      lastBenchedInning[player.id] = inning;
+    });
+
+    const benchedIds = new Set(benchedPlayers.map((player) => player.id));
+    lockedIds.forEach((playerId) => {
+      fieldCounts[playerId] += 1;
+    });
+    const availablePlayers = players
+      .filter((player) => !benchedIds.has(player.id) && !lockedIds.has(player.id))
+      .sort((a, b) => {
+        const fieldDelta = fieldCounts[a.id] - fieldCounts[b.id];
+        if (fieldDelta !== 0) {
+          return fieldDelta;
+        }
+
+        const benchDelta = benchCounts[b.id] - benchCounts[a.id];
+        if (benchDelta !== 0) {
+          return benchDelta;
+        }
+
+        const aIndex = players.findIndex((player) => player.id === a.id);
+        const bIndex = players.findIndex((player) => player.id === b.id);
+        return ((aIndex - inning + players.length) % players.length) - ((bIndex - inning + players.length) % players.length);
+      });
+
+    const remainingPlayers = [...availablePlayers];
+    const previousAssignments = inning > 1 ? team.innings[String(inning - 1)] : null;
+    optimizedPositions.forEach((position) => {
+      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts, previousAssignments);
+      assignments[position] = player?.id || "";
+      if (player) {
+        fieldCounts[player.id] += 1;
+        positionCounts[player.id][position] += 1;
+        const chosenIndex = remainingPlayers.findIndex((candidate) => candidate.id === player.id);
+        remainingPlayers.splice(chosenIndex, 1);
+      }
+    });
+
+    team.innings[inningKey] = assignments;
+  }
+}
+
+function rebalanceSingleInning(team, targetInning, inningCount) {
+  const players = team.players;
+  const rules = getTeamRules(team);
+  const optimizedPositions = rules.optimizePositions;
+  const lockedPositions = rules.lockedPositions;
+  const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
+  const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const fieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const positionCounts = Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(POSITIONS.map((position) => [position, 0]))]));
+  const lastBenchedInning = Object.fromEntries(players.map((player) => [player.id, -999]));
+
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    if (inning === targetInning) {
+      continue;
+    }
+
+    const assignments = team.innings[String(inning)] || createEmptyAssignments();
+    Object.entries(assignments).forEach(([position, playerId]) => {
+      if (!playerId) {
+        return;
+      }
+      fieldCounts[playerId] += 1;
+      positionCounts[playerId][position] += 1;
+    });
+
+    const benchIds = getBenchPlayers(players, assignments);
+    benchIds.forEach((playerId) => {
+      benchCounts[playerId] += 1;
+      lastBenchedInning[playerId] = Math.max(lastBenchedInning[playerId], inning);
+    });
+  }
+
+  const inningKey = String(targetInning);
+  const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
+  const currentBenchIds = new Set(getBenchPlayers(players, existingAssignments));
+  const assignments = createEmptyAssignments();
   lockedPositions.forEach((position) => {
     assignments[position] = existingAssignments[position] || "";
   });
 
   const lockedIds = new Set(lockedPositions.map((position) => assignments[position]).filter(Boolean));
+  const benchedPlayers = benchSlotsPerInning > 0
+    ? [...players]
+        .filter((player) => !lockedIds.has(player.id))
+        .sort((a, b) => {
+          const benchDelta = benchCounts[a.id] - benchCounts[b.id];
+          if (benchDelta !== 0) {
+            return benchDelta;
+          }
 
-  const benchCandidates = players.filter((player) => !lockedIds.has(player.id));
-  const currentBenchIds = new Set(getBenchPlayers(players, existingAssignments));
-  const benchCombos = buildBenchCombinations(benchCandidates, benchSlotsPerInning);
-  const previousAssignments = inning > 1
-    ? (options.mode === "full" ? (options.generatedInnings?.[String(inning - 1)] || team.innings[String(inning - 1)]) : team.innings[String(inning - 1)])
-    : null;
-  const nextAssignments = options.mode === "single" && inning < inningCount ? team.innings[String(inning + 1)] : null;
-  const refreshSeed = refreshCycles[`${team.id}-${inning}`] || 0;
+          const refreshBenchDelta = Number(currentBenchIds.has(a.id)) - Number(currentBenchIds.has(b.id));
+          if (refreshBenchDelta !== 0) {
+            return refreshBenchDelta;
+          }
 
-  let bestResult = null;
+          const fieldDelta = fieldCounts[b.id] - fieldCounts[a.id];
+          if (fieldDelta !== 0) {
+            return fieldDelta;
+          }
 
-  benchCombos
-    .sort((comboA, comboB) => scoreBenchCombo(comboA, tracker, targetBenchCounts, currentBenchIds, players, refreshSeed)
-      - scoreBenchCombo(comboB, tracker, targetBenchCounts, currentBenchIds, players, refreshSeed))
-    .slice(0, 24)
-    .forEach((benchCombo) => {
-      if (bestResult) {
-        return;
+          const lastBenchDelta = lastBenchedInning[a.id] - lastBenchedInning[b.id];
+          if (lastBenchDelta !== 0) {
+            return lastBenchDelta;
+          }
+
+          return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+        })
+        .slice(0, benchSlotsPerInning)
+    : [];
+
+  benchedPlayers.forEach((player) => {
+    benchCounts[player.id] += 1;
+    lastBenchedInning[player.id] = targetInning;
+  });
+
+  const benchedIds = new Set(benchedPlayers.map((player) => player.id));
+  lockedIds.forEach((playerId) => {
+    fieldCounts[playerId] += 1;
+  });
+
+  const availablePlayers = players
+    .filter((player) => !benchedIds.has(player.id) && !lockedIds.has(player.id))
+    .sort((a, b) => {
+      const fieldDelta = fieldCounts[a.id] - fieldCounts[b.id];
+      if (fieldDelta !== 0) {
+        return fieldDelta;
       }
 
-      const benchedIds = new Set(benchCombo.map((player) => player.id));
-      const availablePlayers = players.filter((player) => !benchedIds.has(player.id) && !lockedIds.has(player.id));
-      const positionPlan = assignPositionsForInning(optimizedPositions, availablePlayers, {
-        rosterOrder: players,
-        tracker,
-        previousAssignments,
-        nextAssignments,
-        currentAssignments: existingAssignments,
-        refreshSeed,
-      });
-
-      if (!positionPlan) {
-        return;
+      const benchDelta = benchCounts[b.id] - benchCounts[a.id];
+      if (benchDelta !== 0) {
+        return benchDelta;
       }
 
-      optimizedPositions.forEach((position) => {
-        assignments[position] = positionPlan[position] || "";
-      });
-      bestResult = assignments;
+      return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
     });
 
-  return bestResult;
-}
-
-function createDefenseTracker(players) {
-  return {
-    benchCounts: Object.fromEntries(players.map((player) => [player.id, 0])),
-    fieldCounts: Object.fromEntries(players.map((player) => [player.id, 0])),
-    positionCounts: Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(POSITIONS.map((position) => [position, 0]))])),
-    lastBenchedInning: Object.fromEntries(players.map((player) => [player.id, -999])),
-  };
-}
-
-function applyExistingInningToTracker(team, tracker, inning) {
-  const assignments = team.innings[String(inning)] || createEmptyAssignments();
-  applyAssignmentSetToTracker(team.players, tracker, inning, assignments);
-}
-
-function applyPlannedInningToTracker(team, tracker, inning, assignments) {
-  applyAssignmentSetToTracker(team.players, tracker, inning, assignments);
-}
-
-function applyAssignmentSetToTracker(players, tracker, inning, assignments) {
-  const benchIds = getBenchPlayers(players, assignments);
-  Object.entries(assignments).forEach(([position, playerId]) => {
-    if (!playerId) {
-      return;
+  const remainingPlayers = [...availablePlayers];
+  const previousAssignments = targetInning > 1 ? team.innings[String(targetInning - 1)] : null;
+  optimizedPositions.forEach((position) => {
+    const player = choosePlayerForPosition(
+      remainingPlayers,
+      players,
+      position,
+      positionCounts,
+      previousAssignments,
+      { refreshAssignments: existingAssignments },
+    );
+    assignments[position] = player?.id || "";
+    if (player) {
+      fieldCounts[player.id] += 1;
+      positionCounts[player.id][position] += 1;
+      const chosenIndex = remainingPlayers.findIndex((candidate) => candidate.id === player.id);
+      remainingPlayers.splice(chosenIndex, 1);
     }
-    tracker.fieldCounts[playerId] += 1;
-    tracker.positionCounts[playerId][position] += 1;
   });
-  benchIds.forEach((playerId) => {
-    tracker.benchCounts[playerId] += 1;
-    tracker.lastBenchedInning[playerId] = inning;
-  });
-}
 
-function computeTargetBenchCounts(players, totalBenchSlots, baselineCounts = null) {
-  const base = Math.floor(totalBenchSlots / players.length);
-  const extra = totalBenchSlots % players.length;
-  const ordered = [...players].sort((a, b) => {
-    const baselineDelta = (baselineCounts?.[b.id] || 0) - (baselineCounts?.[a.id] || 0);
-    if (baselineDelta !== 0) {
-      return baselineDelta;
-    }
-    return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
-  });
-  const highIds = new Set(ordered.slice(0, extra).map((player) => player.id));
-  return Object.fromEntries(players.map((player) => [player.id, base + (highIds.has(player.id) ? 1 : 0)]));
-}
-
-function getBenchCountsExcludingInning(team, inningCount, skippedInning) {
-  const counts = Object.fromEntries(team.players.map((player) => [player.id, 0]));
-  for (let inning = 1; inning <= inningCount; inning += 1) {
-    if (inning === skippedInning) {
-      continue;
-    }
-    const benchIds = getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments());
-    benchIds.forEach((playerId) => {
-      counts[playerId] += 1;
-    });
-  }
-  return counts;
-}
-
-function buildBenchCombinations(players, benchSlots) {
-  if (!benchSlots) {
-    return [[]];
-  }
-  const combinations = [];
-
-  function walk(startIndex, current) {
-    if (current.length === benchSlots) {
-      combinations.push([...current]);
-      return;
-    }
-
-    for (let index = startIndex; index < players.length; index += 1) {
-      current.push(players[index]);
-      walk(index + 1, current);
-      current.pop();
-    }
-  }
-
-  walk(0, []);
-  return combinations;
-}
-
-function scoreBenchCombo(combo, tracker, targetBenchCounts, currentBenchIds, players, refreshSeed) {
-  return combo.reduce((score, player) => {
-    const projectedBench = tracker.benchCounts[player.id] + 1;
-    const targetBench = targetBenchCounts[player.id];
-    const rosterIndex = players.findIndex((candidate) => candidate.id === player.id);
-    score += Math.abs(projectedBench - targetBench) * 120;
-    score += currentBenchIds.has(player.id) ? 18 : 0;
-    score -= tracker.fieldCounts[player.id] * 2;
-    score += ((rosterIndex + refreshSeed) % players.length) * 0.1;
-    return score;
-  }, 0);
-}
-
-function assignPositionsForInning(positions, availablePlayers, context) {
-  const orderedPositions = [...positions].sort((a, b) =>
-    rankCandidatesForPosition(a, availablePlayers, context).length - rankCandidatesForPosition(b, availablePlayers, context).length);
-
-  function walk(positionIndex, remainingPlayers, partial) {
-    if (positionIndex >= orderedPositions.length) {
-      return { ...partial };
-    }
-
-    const position = orderedPositions[positionIndex];
-    const candidates = rankCandidatesForPosition(position, remainingPlayers, context);
-    for (const candidate of candidates) {
-      partial[position] = candidate.id;
-      const nextRemaining = remainingPlayers.filter((player) => player.id !== candidate.id);
-      const result = walk(positionIndex + 1, nextRemaining, partial);
-      if (result) {
-        return result;
-      }
-      delete partial[position];
-    }
-
-    return null;
-  }
-
-  return walk(0, availablePlayers, {});
-}
-
-function rankCandidatesForPosition(position, remainingPlayers, context) {
-  const cappedPool = remainingPlayers.filter((player) => context.tracker.positionCounts[player.id][position] < 2);
-  const pool = cappedPool.length ? cappedPool : remainingPlayers;
-
-  return [...pool]
-    .map((player) => ({
-      id: player.id,
-      score: scorePositionCandidate(player, position, context),
-    }))
-    .sort((a, b) => a.score - b.score);
-}
-
-function scorePositionCandidate(player, position, context) {
-  const rosterIndex = context.rosterOrder.findIndex((candidate) => candidate.id === player.id);
-  const preferenceRank = getPreferenceRank(player.preferences, position);
-  const previousPenalty = context.previousAssignments?.[position] === player.id ? 90 : 0;
-  const nextPenalty = context.nextAssignments?.[position] === player.id ? 70 : 0;
-  const currentPenalty = context.currentAssignments?.[position] === player.id ? 30 : 0;
-  const preferencePenalty = preferenceRank === 999 ? 55 : preferenceRank * 10;
-  const positionPenalty = context.tracker.positionCounts[player.id][position] * 35;
-  return previousPenalty
-    + nextPenalty
-    + currentPenalty
-    + preferencePenalty
-    + positionPenalty
-    + ((rosterIndex + context.refreshSeed) % context.rosterOrder.length) * 0.25;
+  team.innings[inningKey] = assignments;
+  return evaluateBenchRefreshImpact(team, targetInning, inningCount);
 }
 
 function getTeamRules(team) {
   return TEAM_RULES[team.id] || { optimizePositions: [...POSITIONS], lockedPositions: [] };
+}
+
+function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts, previousAssignments, options = {}) {
+  if (!remainingPlayers.length) {
+    return null;
+  }
+
+  const avoidIds = new Set();
+  if (previousAssignments?.[position]) {
+    avoidIds.add(previousAssignments[position]);
+  }
+  if (options.refreshAssignments?.[position]) {
+    avoidIds.add(options.refreshAssignments[position]);
+  }
+
+  const avoidRepeatPlayers = remainingPlayers.filter((player) => !avoidIds.has(player.id));
+
+  const preferredPool = remainingPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
+  const preferredNonRepeatPool = avoidRepeatPlayers.filter((player) => preferredPool.some((preferredPlayer) => preferredPlayer.id === player.id));
+
+  if (preferredNonRepeatPool.length) {
+    return sortPlayersForPosition(preferredNonRepeatPool, rosterOrder, position, positionCounts, true)[0];
+  }
+
+  if (preferredPool.length) {
+    return sortPlayersForPosition(preferredPool, rosterOrder, position, positionCounts, true)[0];
+  }
+
+  const fallbackPool = avoidRepeatPlayers.length ? avoidRepeatPlayers : remainingPlayers;
+  return sortPlayersForPosition(fallbackPool, rosterOrder, position, positionCounts, false)[0];
+}
+
+function sortPlayersForPosition(players, rosterOrder, position, positionCounts, usePreferenceRank) {
+  return [...players].sort((a, b) => {
+    if (usePreferenceRank) {
+      const preferenceDelta = getPreferenceRank(a.preferences, position) - getPreferenceRank(b.preferences, position);
+      if (preferenceDelta !== 0) {
+        return preferenceDelta;
+      }
+    }
+
+    const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
+    if (varietyDelta !== 0) {
+      return varietyDelta;
+    }
+    return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
+  });
 }
 
 function evaluateBenchRefreshImpact(team, targetInning, inningCount) {
@@ -542,7 +523,6 @@ function normalizeState(saved) {
       name: team.name || fallback.name,
       players,
       innings,
-      refreshState: typeof team.refreshState === "object" && team.refreshState ? team.refreshState : {},
       game: normalizeGame(team.game, players),
     };
   });
@@ -636,12 +616,10 @@ function normalizeScorebookEntry(entry, inningKey, playerId, entryIndex) {
 let state = loadState();
 let activeSection = "batting";
 let draggedRosterIndex = null;
-const refreshCycles = {};
 
 const elements = {
   sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
   sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
-  subsectionToggles: Array.from(document.querySelectorAll(".subsection-toggle")),
   teamTabs: document.querySelector("#team-tabs"),
   teamName: document.querySelector("#team-name"),
   rosterList: document.querySelector("#roster-list"),
@@ -649,13 +627,10 @@ const elements = {
   lockedDefensePanel: document.querySelector("#locked-defense-panel"),
   defenseGrid: document.querySelector("#defense-grid"),
   playerDefenseGrid: document.querySelector("#player-defense-grid"),
-  defenseExplainer: document.querySelector("#defense-explainer"),
-  defenseValidation: document.querySelector("#defense-validation"),
   preferencesList: document.querySelector("#preferences-list"),
   inningCount: document.querySelector("#inning-count"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
   defenseDiamond: document.querySelector("#defense-diamond"),
-  rebuildDefense: document.querySelector("#rebuild-defense"),
   resetGame: document.querySelector("#reset-game"),
   addPlayer: document.querySelector("#add-player"),
   teamScore: document.querySelector("#team-score"),
@@ -710,15 +685,6 @@ elements.inningCount.addEventListener("change", (event) => {
   saveAndRender();
 });
 
-elements.rebuildDefense.addEventListener("click", () => {
-  updateActiveTeam((team) => {
-    const result = rebalanceDefense(team, state.innings);
-    if (!result) {
-      window.alert("Could not build a legal defense with the current settings. Try relaxing a few preferred positions or checking locked assignments.");
-    }
-  });
-});
-
 elements.defenseVisualInning.addEventListener("change", () => {
   renderDefenseDiamond();
 });
@@ -727,18 +693,6 @@ elements.sectionNavButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeSection = button.dataset.sectionTarget;
     renderSectionVisibility();
-  });
-});
-
-elements.subsectionToggles.forEach((button) => {
-  button.addEventListener("click", () => {
-    const target = document.querySelector(`#${button.dataset.toggleTarget}`);
-    if (!target) {
-      return;
-    }
-    const isCollapsed = target.classList.toggle("is-collapsed");
-    button.textContent = isCollapsed ? "Show" : "Hide";
-    button.setAttribute("aria-expanded", String(!isCollapsed));
   });
 });
 
@@ -801,8 +755,6 @@ function render() {
   renderLineups();
   renderLockedDefenseControls();
   renderPreferences();
-  renderDefenseExplainer();
-  renderDefenseValidation();
   renderDefenseDiamond();
   renderDefenseGrid();
   renderPlayerDefenseGrid();
@@ -838,48 +790,6 @@ function renderTeamTabs() {
   if (Number(elements.defenseVisualInning.value) > state.innings || !elements.defenseVisualInning.value) {
     elements.defenseVisualInning.value = "1";
   }
-}
-
-function renderDefenseExplainer() {
-  const team = getActiveTeam();
-  const rules = getTeamRules(team);
-  const items = [
-    "This section is informational only. It explains what the suggestion engine is trying to do.",
-    "Bench counts are targeted so nobody should sit more than one inning more than anyone else.",
-    "Unlocked positions are capped at two appearances per player per game.",
-    `${team.name === "Ponies" || rules.lockedPositions.length ? "Ponies pitcher/catcher assignments stay locked and are not auto-moved." : "All 10 field spots can be optimized for this team."}`,
-    "Preferred positions are used before non-preferred options when a legal assignment exists.",
-    "Refresh Inning is local to one inning. Rebuild Defense recalculates all active innings together.",
-  ];
-
-  elements.defenseExplainer.innerHTML = "";
-  items.forEach((text) => {
-    const item = document.createElement("div");
-    item.className = "defense-explainer-item";
-    item.textContent = text;
-    elements.defenseExplainer.append(item);
-  });
-}
-
-function renderDefenseValidation() {
-  const team = getActiveTeam();
-  const issues = getDefenseValidation(team, state.innings);
-  elements.defenseValidation.innerHTML = "";
-
-  if (!issues.length) {
-    const item = document.createElement("div");
-    item.className = "validation-item validation-ok";
-    item.textContent = "Defense looks valid across the active innings.";
-    elements.defenseValidation.append(item);
-    return;
-  }
-
-  issues.forEach((issue) => {
-    const item = document.createElement("div");
-    item.className = `validation-item ${issue.severity === "error" ? "validation-error" : "validation-warn"}`;
-    item.textContent = issue.text;
-    elements.defenseValidation.append(item);
-  });
 }
 
 function renderRoster() {
@@ -1015,10 +925,6 @@ function renderLineups() {
     card.querySelector(".inning-refresh-button").addEventListener("click", () => {
       updateActiveTeam((activeTeam) => {
         const refreshImpact = rebalanceSingleInning(activeTeam, inning, state.innings);
-        if (refreshImpact?.failed) {
-          window.alert("Could not refresh this inning into a legal layout with the current rules. Try Rebuild Defense or adjust a locked assignment.");
-          return;
-        }
         if (refreshImpact) {
           const message = refreshImpact.suggestedInning
             ? `Bench balance is now ${refreshImpact.minBench}-${refreshImpact.maxBench}. To keep sit time more even, consider refreshing inning ${refreshImpact.suggestedInning} too.`
@@ -1102,17 +1008,8 @@ function renderLockedDefenseControls() {
 
   const header = document.createElement("div");
   header.className = "panel-header";
-  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div><button class="ghost-button subsection-toggle dynamic-toggle" type="button" aria-expanded="false">Show</button>`;
+  header.innerHTML = `<div><p class="section-label">Hard Set Defense</p><h3>Pitcher And Catcher By Inning</h3></div>`;
   elements.lockedDefensePanel.append(header);
-
-  const content = document.createElement("div");
-  content.className = "subsection-content is-collapsed";
-  const toggleButton = header.querySelector(".dynamic-toggle");
-  toggleButton.addEventListener("click", () => {
-    const isCollapsed = content.classList.toggle("is-collapsed");
-    toggleButton.textContent = isCollapsed ? "Show" : "Hide";
-    toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
-  });
 
   rules.lockedPositions.forEach((position) => {
     const row = elements.lockedRowTemplate.content.firstElementChild.cloneNode(true);
@@ -1136,10 +1033,8 @@ function renderLockedDefenseControls() {
       container.append(slot);
     }
 
-    content.append(row);
+    elements.lockedDefensePanel.append(row);
   });
-
-  elements.lockedDefensePanel.append(content);
 }
 
 function renderDefenseGrid() {

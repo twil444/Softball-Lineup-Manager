@@ -178,13 +178,6 @@ h1 {
   flex-wrap: wrap;
 }
 
-.defense-header-actions {
-  display: flex;
-  gap: 10px;
-  align-items: end;
-  flex-wrap: wrap;
-}
-
 .team-tabs {
   display: flex;
   gap: 10px;
@@ -336,46 +329,6 @@ select {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
-}
-
-.subsection-content {
-  display: grid;
-  gap: 8px;
-}
-
-.subsection-content.is-collapsed {
-  display: none;
-}
-
-.defense-explainer,
-.defense-validation {
-  display: grid;
-  gap: 8px;
-}
-
-.defense-explainer-item,
-.validation-item {
-  background: #f8fbfd;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-size: 0.86rem;
-  line-height: 1.35;
-}
-
-.validation-ok {
-  background: #eef8ef;
-  border-color: #b9d7be;
-}
-
-.validation-warn {
-  background: #fff8e9;
-  border-color: #ecd28a;
-}
-
-.validation-error {
-  background: #fff0ec;
-  border-color: #efb6a7;
 }
 
 .defense-grid {
@@ -937,23 +890,6 @@ select {
 
   .locked-selects {
     grid-template-columns: repeat(2, 1fr);
-  }
-
-  .defense-header-actions {
-    align-items: stretch;
-  }
-
-  .subsection-toggle,
-  .inning-refresh-button,
-  #rebuild-defense {
-    min-height: 34px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
-  }
-
-  .legend,
-  .hint {
-    font-size: 0.82rem;
   }
 
   .defense-grid-row {
