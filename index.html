@@ -20,10 +20,7 @@
         <p class="subtitle">
           Build lineups fast, balance field time, and keep score from one phone-friendly screen.
         </p>
-      </div>
-      <div class="hero-actions">
-        <button id="reset-demo" class="ghost-button" type="button">Reset Sample Data</button>
-        <button id="autofill-team" class="primary-button" type="button">Balance Defense</button>
+        <div class="team-tabs top-team-tabs" id="team-tabs" aria-label="Select team"></div>
       </div>
     </header>
 
@@ -42,7 +39,6 @@
             <p class="section-label">Teams</p>
             <h2>Roster Setup</h2>
           </div>
-          <div class="team-tabs" id="team-tabs" aria-label="Select team"></div>
         </div>
 
         <label class="field">
@@ -56,7 +52,7 @@
             <h3>Batting Order</h3>
           </div>
           <div class="roster-actions">
-            <p class="hint">Use Balance Defense for a fair starting point, then adjust manually as needed.</p>
+            <p class="hint">Set the batting order here, then use inning refresh on Defense to build suggestions.</p>
             <button id="add-player" class="ghost-button" type="button">Add Player</button>
           </div>
         </div>
@@ -247,7 +243,10 @@
   <template id="inning-card-template">
     <article class="inning-card">
       <div class="inning-header">
-        <h3></h3>
+        <div class="inning-heading">
+          <h3></h3>
+          <button class="ghost-button inning-refresh-button" type="button">Refresh</button>
+        </div>
         <p class="bench-list"></p>
       </div>
       <div class="inning-positions"></div>

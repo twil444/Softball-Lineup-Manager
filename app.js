@@ -226,6 +226,7 @@ function rebalanceSingleInning(team, targetInning, inningCount) {
 
   const inningKey = String(targetInning);
   const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
+  const currentBenchIds = new Set(getBenchPlayers(players, existingAssignments));
   const assignments = createEmptyAssignments();
   lockedPositions.forEach((position) => {
     assignments[position] = existingAssignments[position] || "";
@@ -239,6 +240,11 @@ function rebalanceSingleInning(team, targetInning, inningCount) {
           const benchDelta = benchCounts[a.id] - benchCounts[b.id];
           if (benchDelta !== 0) {
             return benchDelta;
+          }
+
+          const refreshBenchDelta = Number(currentBenchIds.has(a.id)) - Number(currentBenchIds.has(b.id));
+          if (refreshBenchDelta !== 0) {
+            return refreshBenchDelta;
           }
 
           const fieldDelta = fieldCounts[b.id] - fieldCounts[a.id];
@@ -303,6 +309,7 @@ function rebalanceSingleInning(team, targetInning, inningCount) {
   });
 
   team.innings[inningKey] = assignments;
+  return evaluateBenchRefreshImpact(team, targetInning, inningCount);
 }
 
 function getTeamRules(team) {
@@ -354,6 +361,49 @@ function sortPlayersForPosition(players, rosterOrder, position, positionCounts, 
     }
     return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
   });
+}
+
+function evaluateBenchRefreshImpact(team, targetInning, inningCount) {
+  const benchCounts = getBenchCounts(team, inningCount);
+  const values = Object.values(benchCounts);
+  const maxBench = Math.max(...values, 0);
+  const minBench = Math.min(...values, 0);
+  if (maxBench - minBench <= 1) {
+    return null;
+  }
+
+  const overBenchedIds = Object.entries(benchCounts)
+    .filter(([, count]) => count === maxBench)
+    .map(([playerId]) => playerId);
+  const underBenchedIds = Object.entries(benchCounts)
+    .filter(([, count]) => count === minBench)
+    .map(([playerId]) => playerId);
+
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    if (inning === targetInning) {
+      continue;
+    }
+
+    const benchIds = getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments());
+    const hasOverBenchedPlayer = benchIds.some((playerId) => overBenchedIds.includes(playerId));
+    const hasUnderBenchedPlayerInField = underBenchedIds.some((playerId) => !benchIds.includes(playerId));
+    if (hasOverBenchedPlayer && hasUnderBenchedPlayerInField) {
+      return { suggestedInning: inning, maxBench, minBench };
+    }
+  }
+
+  return { suggestedInning: null, maxBench, minBench };
+}
+
+function getBenchCounts(team, inningCount) {
+  const benchCounts = Object.fromEntries(team.players.map((player) => [player.id, 0]));
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    const benchIds = getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments());
+    benchIds.forEach((playerId) => {
+      benchCounts[playerId] += 1;
+    });
+  }
+  return benchCounts;
 }
 
 function getPreferenceRank(preferences, position) {
@@ -525,7 +575,6 @@ const elements = {
   inningCount: document.querySelector("#inning-count"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
   defenseDiamond: document.querySelector("#defense-diamond"),
-  resetDemo: document.querySelector("#reset-demo"),
   resetGame: document.querySelector("#reset-game"),
   addPlayer: document.querySelector("#add-player"),
   teamScore: document.querySelector("#team-score"),
@@ -589,11 +638,6 @@ elements.sectionNavButtons.forEach((button) => {
     activeSection = button.dataset.sectionTarget;
     renderSectionVisibility();
   });
-});
-
-elements.resetDemo.addEventListener("click", () => {
-  state = defaultState();
-  saveAndRender();
 });
 
 elements.addPlayer.addEventListener("click", () => {
@@ -824,7 +868,13 @@ function renderLineups() {
     card.querySelector("h3").textContent = `Inning ${inning}`;
     card.querySelector(".inning-refresh-button").addEventListener("click", () => {
       updateActiveTeam((activeTeam) => {
-        rebalanceSingleInning(activeTeam, inning, state.innings);
+        const refreshImpact = rebalanceSingleInning(activeTeam, inning, state.innings);
+        if (refreshImpact) {
+          const message = refreshImpact.suggestedInning
+            ? `Bench balance is now ${refreshImpact.minBench}-${refreshImpact.maxBench}. To keep sit time more even, consider refreshing inning ${refreshImpact.suggestedInning} too.`
+            : `Bench balance is now ${refreshImpact.minBench}-${refreshImpact.maxBench}. Another inning may need an adjustment to keep sit time even.`;
+          window.alert(message);
+        }
       });
     });
 
@@ -937,7 +987,7 @@ function renderDefenseGrid() {
   const rules = getTeamRules(team);
   const header = document.createElement("div");
   header.className = "defense-grid-row defense-grid-header-row";
-  header.append(createDefenseGridCell("Pos", true));
+  header.append(createDefenseGridCell("Pos", true, true));
   for (let inning = 1; inning <= state.innings; inning += 1) {
     header.append(createDefenseGridCell(`In ${inning}`, true));
   }
@@ -953,7 +1003,7 @@ function renderDefenseGrid() {
     const row = document.createElement("div");
     row.className = "defense-grid-row";
     const label = rowKey.startsWith("BENCH_") ? `B${rowKey.split("_")[1]}` : rowKey;
-    row.append(createDefenseGridCell(label, true));
+    row.append(createDefenseGridCell(label, true, true));
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const inningAssignments = team.innings[String(inning)];
@@ -981,7 +1031,7 @@ function renderPlayerDefenseGrid() {
 
   const header = document.createElement("div");
   header.className = "defense-grid-row defense-grid-header-row player-defense-header-row";
-  header.append(createDefenseGridCell("Player", true));
+  header.append(createDefenseGridCell("Player", true, true));
   for (let inning = 1; inning <= state.innings; inning += 1) {
     header.append(createDefenseGridCell(`In ${inning}`, true));
   }
@@ -990,7 +1040,7 @@ function renderPlayerDefenseGrid() {
   team.players.forEach((player, index) => {
     const row = document.createElement("div");
     row.className = "defense-grid-row player-defense-row";
-    row.append(createDefenseGridCell(`#${index + 1} ${getShortPlayerName(team.players, player.id)}`, true));
+    row.append(createDefenseGridCell(`#${index + 1} ${getShortPlayerName(team.players, player.id)}`, true, true));
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const assignments = team.innings[String(inning)];
@@ -1007,9 +1057,9 @@ function renderPlayerDefenseGrid() {
   });
 }
 
-function createDefenseGridCell(text, isHeader = false) {
+function createDefenseGridCell(text, isHeader = false, isRowHeader = false) {
   const cell = document.createElement("div");
-  cell.className = `defense-grid-cell${isHeader ? " header" : ""}`;
+  cell.className = `defense-grid-cell${isHeader ? " header" : ""}${isRowHeader ? " row-header" : ""}`;
   cell.textContent = text;
   return cell;
 }
