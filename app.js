@@ -192,43 +192,168 @@ function rebalanceDefense(team, inningCount) {
   }
 }
 
+function rebalanceSingleInning(team, targetInning, inningCount) {
+  const players = team.players;
+  const rules = getTeamRules(team);
+  const optimizedPositions = rules.optimizePositions;
+  const lockedPositions = rules.lockedPositions;
+  const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
+  const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const fieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
+  const positionCounts = Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(POSITIONS.map((position) => [position, 0]))]));
+  const lastBenchedInning = Object.fromEntries(players.map((player) => [player.id, -999]));
+
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    if (inning === targetInning) {
+      continue;
+    }
+
+    const assignments = team.innings[String(inning)] || createEmptyAssignments();
+    Object.entries(assignments).forEach(([position, playerId]) => {
+      if (!playerId) {
+        return;
+      }
+      fieldCounts[playerId] += 1;
+      positionCounts[playerId][position] += 1;
+    });
+
+    const benchIds = getBenchPlayers(players, assignments);
+    benchIds.forEach((playerId) => {
+      benchCounts[playerId] += 1;
+      lastBenchedInning[playerId] = Math.max(lastBenchedInning[playerId], inning);
+    });
+  }
+
+  const inningKey = String(targetInning);
+  const existingAssignments = team.innings[inningKey] || createEmptyAssignments();
+  const assignments = createEmptyAssignments();
+  lockedPositions.forEach((position) => {
+    assignments[position] = existingAssignments[position] || "";
+  });
+
+  const lockedIds = new Set(lockedPositions.map((position) => assignments[position]).filter(Boolean));
+  const benchedPlayers = benchSlotsPerInning > 0
+    ? [...players]
+        .filter((player) => !lockedIds.has(player.id))
+        .sort((a, b) => {
+          const benchDelta = benchCounts[a.id] - benchCounts[b.id];
+          if (benchDelta !== 0) {
+            return benchDelta;
+          }
+
+          const fieldDelta = fieldCounts[b.id] - fieldCounts[a.id];
+          if (fieldDelta !== 0) {
+            return fieldDelta;
+          }
+
+          const lastBenchDelta = lastBenchedInning[a.id] - lastBenchedInning[b.id];
+          if (lastBenchDelta !== 0) {
+            return lastBenchDelta;
+          }
+
+          return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+        })
+        .slice(0, benchSlotsPerInning)
+    : [];
+
+  benchedPlayers.forEach((player) => {
+    benchCounts[player.id] += 1;
+    lastBenchedInning[player.id] = targetInning;
+  });
+
+  const benchedIds = new Set(benchedPlayers.map((player) => player.id));
+  lockedIds.forEach((playerId) => {
+    fieldCounts[playerId] += 1;
+  });
+
+  const availablePlayers = players
+    .filter((player) => !benchedIds.has(player.id) && !lockedIds.has(player.id))
+    .sort((a, b) => {
+      const fieldDelta = fieldCounts[a.id] - fieldCounts[b.id];
+      if (fieldDelta !== 0) {
+        return fieldDelta;
+      }
+
+      const benchDelta = benchCounts[b.id] - benchCounts[a.id];
+      if (benchDelta !== 0) {
+        return benchDelta;
+      }
+
+      return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+    });
+
+  const remainingPlayers = [...availablePlayers];
+  const previousAssignments = targetInning > 1 ? team.innings[String(targetInning - 1)] : null;
+  optimizedPositions.forEach((position) => {
+    const player = choosePlayerForPosition(
+      remainingPlayers,
+      players,
+      position,
+      positionCounts,
+      previousAssignments,
+      { refreshAssignments: existingAssignments },
+    );
+    assignments[position] = player?.id || "";
+    if (player) {
+      fieldCounts[player.id] += 1;
+      positionCounts[player.id][position] += 1;
+      const chosenIndex = remainingPlayers.findIndex((candidate) => candidate.id === player.id);
+      remainingPlayers.splice(chosenIndex, 1);
+    }
+  });
+
+  team.innings[inningKey] = assignments;
+}
+
 function getTeamRules(team) {
   return TEAM_RULES[team.id] || { optimizePositions: [...POSITIONS], lockedPositions: [] };
 }
 
-function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts, previousAssignments) {
+function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts, previousAssignments, options = {}) {
   if (!remainingPlayers.length) {
     return null;
   }
 
-  const avoidRepeatPlayers = previousAssignments
-    ? remainingPlayers.filter((player) => previousAssignments[position] !== player.id)
-    : remainingPlayers;
+  const avoidIds = new Set();
+  if (previousAssignments?.[position]) {
+    avoidIds.add(previousAssignments[position]);
+  }
+  if (options.refreshAssignments?.[position]) {
+    avoidIds.add(options.refreshAssignments[position]);
+  }
 
-  const preferredPlayers = avoidRepeatPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
-  if (preferredPlayers.length) {
-    preferredPlayers.sort((a, b) => {
+  const avoidRepeatPlayers = remainingPlayers.filter((player) => !avoidIds.has(player.id));
+
+  const preferredPool = remainingPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
+  const preferredNonRepeatPool = avoidRepeatPlayers.filter((player) => preferredPool.some((preferredPlayer) => preferredPlayer.id === player.id));
+
+  if (preferredNonRepeatPool.length) {
+    return sortPlayersForPosition(preferredNonRepeatPool, rosterOrder, position, positionCounts, true)[0];
+  }
+
+  if (preferredPool.length) {
+    return sortPlayersForPosition(preferredPool, rosterOrder, position, positionCounts, true)[0];
+  }
+
+  const fallbackPool = avoidRepeatPlayers.length ? avoidRepeatPlayers : remainingPlayers;
+  return sortPlayersForPosition(fallbackPool, rosterOrder, position, positionCounts, false)[0];
+}
+
+function sortPlayersForPosition(players, rosterOrder, position, positionCounts, usePreferenceRank) {
+  return [...players].sort((a, b) => {
+    if (usePreferenceRank) {
       const preferenceDelta = getPreferenceRank(a.preferences, position) - getPreferenceRank(b.preferences, position);
       if (preferenceDelta !== 0) {
         return preferenceDelta;
       }
-      const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
-      if (varietyDelta !== 0) {
-        return varietyDelta;
-      }
-      return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
-    });
-    return preferredPlayers[0];
-  }
+    }
 
-  const fallbackPool = avoidRepeatPlayers.length ? avoidRepeatPlayers : remainingPlayers;
-  return [...fallbackPool].sort((a, b) => {
     const varietyDelta = positionCounts[a.id][position] - positionCounts[b.id][position];
     if (varietyDelta !== 0) {
       return varietyDelta;
     }
     return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
-  })[0];
+  });
 }
 
 function getPreferenceRank(preferences, position) {
@@ -401,7 +526,6 @@ const elements = {
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
   defenseDiamond: document.querySelector("#defense-diamond"),
   resetDemo: document.querySelector("#reset-demo"),
-  autofillTeam: document.querySelector("#autofill-team"),
   resetGame: document.querySelector("#reset-game"),
   addPlayer: document.querySelector("#add-player"),
   teamScore: document.querySelector("#team-score"),
@@ -470,12 +594,6 @@ elements.sectionNavButtons.forEach((button) => {
 elements.resetDemo.addEventListener("click", () => {
   state = defaultState();
   saveAndRender();
-});
-
-elements.autofillTeam.addEventListener("click", () => {
-  updateActiveTeam((team) => {
-    rebalanceDefense(team, state.innings);
-  });
 });
 
 elements.addPlayer.addEventListener("click", () => {
@@ -701,8 +819,14 @@ function renderLineups() {
   for (let inning = 1; inning <= state.innings; inning += 1) {
     const inningKey = String(inning);
     const assignments = team.innings[inningKey];
+    const duplicateGroups = getDuplicateAssignmentGroups(assignments);
     const card = elements.inningCardTemplate.content.firstElementChild.cloneNode(true);
     card.querySelector("h3").textContent = `Inning ${inning}`;
+    card.querySelector(".inning-refresh-button").addEventListener("click", () => {
+      updateActiveTeam((activeTeam) => {
+        rebalanceSingleInning(activeTeam, inning, state.innings);
+      });
+    });
 
     const positionsContainer = card.querySelector(".inning-positions");
     POSITIONS.forEach((position) => {
@@ -712,6 +836,7 @@ function renderLineups() {
       const row = elements.positionRowTemplate.content.firstElementChild.cloneNode(true);
       row.querySelector("span").textContent = position;
       const select = row.querySelector("select");
+      applyDuplicateGroupClass(row, duplicateGroups[assignments[position]]);
       populatePlayerOptions(select, team.players, assignments[position]);
       select.addEventListener("change", (event) => {
         updateActiveTeam((activeTeam) => {
@@ -727,6 +852,7 @@ function renderLineups() {
       row.classList.add("bench-row");
       row.querySelector("span").textContent = `BN${index + 1}`;
       const select = row.querySelector("select");
+      applyDuplicateGroupClass(row, duplicateGroups[playerId]);
       populatePlayerOptions(select, team.players, playerId, "Open");
       select.addEventListener("change", (event) => {
         updateActiveTeam((activeTeam) => {
@@ -831,6 +957,7 @@ function renderDefenseGrid() {
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const inningAssignments = team.innings[String(inning)];
+      const duplicateGroups = getDuplicateAssignmentGroups(inningAssignments);
       const benchIds = getBenchPlayers(team.players, inningAssignments);
       const playerId = rowKey.startsWith("BENCH_")
         ? benchIds[Number(rowKey.split("_")[1]) - 1] || ""
@@ -839,6 +966,7 @@ function renderDefenseGrid() {
       const shortName = playerId ? getShortPlayerName(team.players, playerId) : "";
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${rowKey.startsWith("BENCH_") ? " bench" : ""}`;
+      applyDuplicateGroupClass(cell, duplicateGroups[playerId]);
       cell.innerHTML = `<strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span>${shortName}</span>`;
       row.append(cell);
     }
@@ -866,9 +994,11 @@ function renderPlayerDefenseGrid() {
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const assignments = team.innings[String(inning)];
+      const duplicateGroups = getDuplicateAssignmentGroups(assignments);
       const position = POSITIONS.find((slot) => assignments[slot] === player.id);
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${position ? "" : " bench"}`;
+      applyDuplicateGroupClass(cell, duplicateGroups[player.id]);
       cell.innerHTML = `<strong>${position || "BN"}</strong>`;
       row.append(cell);
     }
@@ -1485,17 +1615,41 @@ function getBenchPlayers(players, assignments) {
 }
 
 function getDuplicateAssignments(players, assignments) {
-  const counts = Object.values(assignments).reduce((map, playerId) => {
+  const counts = getAssignmentCounts(assignments);
+
+  return Object.entries(counts)
+    .filter(([, count]) => count > 1)
+    .map(([playerId]) => getPlayerName(players, playerId));
+}
+
+function getDuplicateAssignmentGroups(assignments) {
+  const counts = getAssignmentCounts(assignments);
+  const duplicateIds = Object.entries(counts)
+    .filter(([, count]) => count > 1)
+    .map(([playerId]) => playerId);
+
+  return duplicateIds.reduce((groups, playerId, index) => {
+    groups[playerId] = index;
+    return groups;
+  }, {});
+}
+
+function getAssignmentCounts(assignments) {
+  return Object.values(assignments).reduce((map, playerId) => {
     if (!playerId) {
       return map;
     }
     map[playerId] = (map[playerId] || 0) + 1;
     return map;
   }, {});
+}
 
-  return Object.entries(counts)
-    .filter(([, count]) => count > 1)
-    .map(([playerId]) => getPlayerName(players, playerId));
+function applyDuplicateGroupClass(element, groupIndex) {
+  if (groupIndex === undefined || groupIndex === null) {
+    return;
+  }
+
+  element.classList.add("duplicate-assignment", `duplicate-group-${(groupIndex % 4) + 1}`);
 }
 
 function getPlayerName(players, playerId) {
