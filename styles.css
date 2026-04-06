@@ -257,6 +257,10 @@ select {
   grid-template-columns: 34px 56px 1fr auto;
 }
 
+.roster-row input {
+  min-width: 0;
+}
+
 .bat-spot {
   font-weight: 800;
   color: var(--accent);
@@ -293,9 +297,17 @@ select {
   color: var(--accent);
 }
 
+.row-actions .move-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 0.74rem;
+}
+
 .remove-button {
-  min-width: 36px;
-  height: 36px;
+  min-width: 54px;
+  height: 32px;
   padding: 0 10px;
   background: #fff3ef;
   border: 1px solid #f0c7bb;
@@ -314,44 +326,39 @@ select {
 
 .defense-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
-}
-
-.defense-grid-card {
-  background: #f8fbfd;
+  gap: 1px;
+  overflow-x: auto;
+  background: var(--line);
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 10px;
 }
 
-.defense-grid-card h4 {
-  margin: 0 0 8px;
-  color: var(--accent);
-}
-
-.defense-grid-mini {
+.defense-grid-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: 52px repeat(7, minmax(70px, 1fr));
+  gap: 1px;
 }
 
-.defense-grid-mini-cell {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+.defense-grid-cell {
+  background: #f8fbfd;
   padding: 6px;
+  min-height: 48px;
+  font-size: 0.74rem;
 }
 
-.defense-grid-mini-cell strong,
+.defense-grid-cell.header {
+  background: #17324d;
+  color: white;
+  font-weight: 700;
+}
+
+.defense-grid-cell.bench {
+  background: #fff7f3;
+}
+
+.defense-grid-cell strong,
 .scorebook-cell strong {
   display: block;
-}
-
-.defense-grid-bench {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
 }
 
 .locked-row {
@@ -655,8 +662,8 @@ select {
 
 .scorebook-cell {
   background: #f8fbfd;
-  min-height: 52px;
-  padding: 6px;
+  min-height: 64px;
+  padding: 4px;
   font-size: 0.76rem;
 }
 
@@ -664,6 +671,29 @@ select {
   background: #e8f0f8;
   color: var(--accent);
   font-weight: 700;
+}
+
+.scorebook-entry-stack {
+  display: grid;
+  gap: 3px;
+}
+
+.scorebook-entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scorebook-diamond {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.scorebook-note {
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.1;
 }
 
 .preference-row {
@@ -745,10 +775,34 @@ select {
   }
 
   .summary-card,
-  .roster-row,
   .position-row,
   .preference-row {
     grid-template-columns: 1fr;
+  }
+
+  .roster-row {
+    grid-template-columns: 26px 42px minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .drag-handle {
+    min-height: 30px;
+    font-size: 0.72rem;
+    padding: 0 4px;
+  }
+
+  .bat-spot {
+    font-size: 0.9rem;
+  }
+
+  .player-name {
+    min-height: 34px;
+    padding: 6px 8px;
+  }
+
+  .row-actions {
+    gap: 4px;
   }
 
   .inning-positions {
@@ -765,6 +819,10 @@ select {
 
   .locked-selects {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .defense-grid-row {
+    grid-template-columns: 44px repeat(7, minmax(62px, 1fr));
   }
 
   .scoreboard {

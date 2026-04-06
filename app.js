@@ -346,10 +346,32 @@ function normalizeScorebook(scorebook, players) {
     normalized[inningKey] = {};
     players.forEach((player) => {
       const entries = scorebook?.[inningKey]?.[player.id];
-      normalized[inningKey][player.id] = Array.isArray(entries) ? entries.slice(0, 6) : [];
+      normalized[inningKey][player.id] = Array.isArray(entries)
+        ? entries.slice(0, 6).map((entry, entryIndex) => normalizeScorebookEntry(entry, inningKey, player.id, entryIndex))
+        : [];
     });
   }
   return normalized;
+}
+
+function normalizeScorebookEntry(entry, inningKey, playerId, entryIndex) {
+  if (typeof entry === "string") {
+    return {
+      id: `${inningKey}-${playerId}-${entryIndex}`,
+      result: entry,
+      basesReached: [],
+      scored: false,
+      out: entry === "O" || entry === "K",
+    };
+  }
+
+  return {
+    id: entry?.id || `${inningKey}-${playerId}-${entryIndex}`,
+    result: entry?.result || "",
+    basesReached: Array.isArray(entry?.basesReached) ? entry.basesReached.filter((base) => [1, 2, 3].includes(base)) : [],
+    scored: Boolean(entry?.scored),
+    out: Boolean(entry?.out),
+  };
 }
 
 let state = loadState();
@@ -606,6 +628,14 @@ function renderRoster() {
   });
 }
 
+function getShortPlayerName(players, playerId) {
+  const fullName = getPlayerName(players, playerId);
+  if (!fullName || fullName === "Unknown") {
+    return "Open";
+  }
+  return fullName.split(" ")[0];
+}
+
 function movePlayer(index, direction) {
   updateActiveTeam((team) => {
     const targetIndex = index + direction;
@@ -764,36 +794,50 @@ function renderLockedDefenseControls() {
 function renderDefenseGrid() {
   const team = getActiveTeam();
   elements.defenseGrid.innerHTML = "";
+  const rules = getTeamRules(team);
+  const header = document.createElement("div");
+  header.className = "defense-grid-row defense-grid-header-row";
+  header.append(createDefenseGridCell("Pos", true));
   for (let inning = 1; inning <= state.innings; inning += 1) {
-    const inningKey = String(inning);
-    const assignments = team.innings[inningKey];
-    const benchIds = getBenchPlayers(team.players, assignments);
-    const card = document.createElement("article");
-    card.className = "defense-grid-card";
-    const title = document.createElement("h4");
-    title.textContent = `Inning ${inning}`;
-    const miniGrid = document.createElement("div");
-    miniGrid.className = "defense-grid-mini";
-
-    POSITIONS.forEach((position) => {
-      const playerId = assignments[position];
-      const battingNumber = getBattingNumber(team.players, playerId);
-      const playerName = playerId ? getPlayerName(team.players, playerId) : "Open";
-      const cell = document.createElement("div");
-      cell.className = "defense-grid-mini-cell";
-      cell.innerHTML = `<span class="spot-label">${position}</span><strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span class="spot-detail">${playerName}</span>`;
-      miniGrid.append(cell);
-    });
-
-    const bench = document.createElement("div");
-    bench.className = "defense-grid-bench";
-    bench.textContent = benchIds.length
-      ? `Bench: ${benchIds.map((playerId) => `#${getBattingNumber(team.players, playerId)}`).join(", ")}`
-      : "Bench: None";
-
-    card.append(title, miniGrid, bench);
-    elements.defenseGrid.append(card);
+    header.append(createDefenseGridCell(`In ${inning}`, true));
   }
+  elements.defenseGrid.append(header);
+
+  const rows = [...POSITIONS];
+  const maxBenchCount = Math.max(...Array.from({ length: state.innings }, (_, index) => getBenchPlayers(team.players, team.innings[String(index + 1)]).length), 0);
+  for (let benchIndex = 0; benchIndex < maxBenchCount; benchIndex += 1) {
+    rows.push(`BENCH_${benchIndex + 1}`);
+  }
+
+  rows.forEach((rowKey) => {
+    const row = document.createElement("div");
+    row.className = "defense-grid-row";
+    const label = rowKey.startsWith("BENCH_") ? `B${rowKey.split("_")[1]}` : rowKey;
+    row.append(createDefenseGridCell(label, true));
+
+    for (let inning = 1; inning <= state.innings; inning += 1) {
+      const inningAssignments = team.innings[String(inning)];
+      const benchIds = getBenchPlayers(team.players, inningAssignments);
+      const playerId = rowKey.startsWith("BENCH_")
+        ? benchIds[Number(rowKey.split("_")[1]) - 1] || ""
+        : inningAssignments[rowKey];
+      const battingNumber = getBattingNumber(team.players, playerId);
+      const shortName = playerId ? getShortPlayerName(team.players, playerId) : "";
+      const cell = document.createElement("div");
+      cell.className = `defense-grid-cell${rowKey.startsWith("BENCH_") ? " bench" : ""}`;
+      cell.innerHTML = `<strong>${battingNumber ? `#${battingNumber}` : "-"}</strong><span>${shortName}</span>`;
+      row.append(cell);
+    }
+
+    elements.defenseGrid.append(row);
+  });
+}
+
+function createDefenseGridCell(text, isHeader = false) {
+  const cell = document.createElement("div");
+  cell.className = `defense-grid-cell${isHeader ? " header" : ""}`;
+  cell.textContent = text;
+  return cell;
 }
 
 function renderPreferences() {
@@ -994,7 +1038,7 @@ function renderScorebook() {
     row.append(createScorebookCell(`${index + 1}. ${player.name}`, true));
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const cellEntries = team.game.scorebook?.[String(inning)]?.[player.id] || [];
-      row.append(createScorebookCell(cellEntries.join(" ") || ""));
+      row.append(createScorebookCell(renderScorebookEntries(cellEntries)));
     }
     table.append(row);
   });
@@ -1006,8 +1050,103 @@ function renderScorebook() {
 function createScorebookCell(content, isHeader = false) {
   const cell = document.createElement("div");
   cell.className = `scorebook-cell${isHeader ? " header" : ""}`;
-  cell.textContent = content;
+  if (typeof content === "string") {
+    cell.textContent = content;
+  } else {
+    cell.append(content);
+  }
   return cell;
+}
+
+function renderScorebookEntries(entries) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "scorebook-entry-stack";
+
+  if (!entries.length) {
+    return wrapper;
+  }
+
+  entries.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "scorebook-entry";
+    item.append(createScorebookDiamond(entry));
+
+    const note = document.createElement("div");
+    note.className = "scorebook-note";
+    note.textContent = entry.result;
+    item.append(note);
+
+    wrapper.append(item);
+  });
+
+  return wrapper;
+}
+
+function createScorebookDiamond(entry) {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", "0 0 40 40");
+  svg.setAttribute("class", "scorebook-diamond");
+
+  const outline = document.createElementNS(svgNS, "polygon");
+  outline.setAttribute("points", "20,3 37,20 20,37 3,20");
+  outline.setAttribute("fill", "white");
+  outline.setAttribute("stroke", "#1c2f44");
+  outline.setAttribute("stroke-width", "1.5");
+  svg.append(outline);
+
+  const home = [20, 37];
+  const first = [37, 20];
+  const second = [20, 3];
+  const third = [3, 20];
+  const segments = [];
+
+  if (entry.basesReached.includes(1)) {
+    segments.push([home, first]);
+  }
+  if (entry.basesReached.includes(2)) {
+    segments.push([first, second]);
+  }
+  if (entry.basesReached.includes(3)) {
+    segments.push([second, third]);
+  }
+  if (entry.scored) {
+    segments.push([third, home]);
+  }
+
+  segments.forEach((segment) => {
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", String(segment[0][0]));
+    line.setAttribute("y1", String(segment[0][1]));
+    line.setAttribute("x2", String(segment[1][0]));
+    line.setAttribute("y2", String(segment[1][1]));
+    line.setAttribute("stroke", "#111");
+    line.setAttribute("stroke-width", "2.6");
+    svg.append(line);
+  });
+
+  if (entry.out) {
+    const outMark = document.createElementNS(svgNS, "line");
+    outMark.setAttribute("x1", "8");
+    outMark.setAttribute("y1", "32");
+    outMark.setAttribute("x2", "32");
+    outMark.setAttribute("y2", "8");
+    outMark.setAttribute("stroke", "#a6452f");
+    outMark.setAttribute("stroke-width", "2");
+    svg.append(outMark);
+  }
+
+  const text = document.createElementNS(svgNS, "text");
+  text.setAttribute("x", "20");
+  text.setAttribute("y", "23");
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("font-size", "9");
+  text.setAttribute("font-weight", "700");
+  text.setAttribute("fill", "#17324d");
+  text.textContent = entry.result;
+  svg.append(text);
+
+  return svg;
 }
 
 function adjustGameNumber(key, delta, minimum = 0, maximum = Number.POSITIVE_INFINITY) {
@@ -1038,20 +1177,20 @@ function recordPlateAppearance(result) {
 
     if (result === "Hit") {
       team.game.totals.hits += 1;
-      placeBatterOnFirst(team.game, batter.id);
-      addScorebookMark(team.game, batter.id, inningKey, "H");
+      addScorebookMark(team.game, batter.id, inningKey, createScorebookEntry("1B", 1));
+      placeBatterOnFirst(team.game, batter.id, inningKey);
       addGameLog(team.game, `${batter.name} hit`, describeBases(team, team.game));
     }
 
     if (result === "Walk") {
       team.game.totals.walks += 1;
-      forceWalk(team.game, batter.id);
-      addScorebookMark(team.game, batter.id, inningKey, "BB");
+      addScorebookMark(team.game, batter.id, inningKey, createScorebookEntry("BB", 1));
+      forceWalk(team.game, batter.id, inningKey);
       addGameLog(team.game, `${batter.name} walk`, describeBases(team, team.game));
     }
 
     if (result === "Out") {
-      addScorebookMark(team.game, batter.id, inningKey, "O");
+      addScorebookMark(team.game, batter.id, inningKey, createScorebookEntry("O", null, { out: true }));
       team.game.outs = Math.min(3, team.game.outs + 1);
       if (team.game.outs >= 3) {
         team.game.outs = 0;
@@ -1064,7 +1203,7 @@ function recordPlateAppearance(result) {
 
     if (result === "Strikeout") {
       team.game.totals.strikeouts += 1;
-      addScorebookMark(team.game, batter.id, inningKey, "K");
+      addScorebookMark(team.game, batter.id, inningKey, createScorebookEntry("K", null, { out: true }));
       team.game.outs = Math.min(3, team.game.outs + 1);
       if (team.game.outs >= 3) {
         team.game.outs = 0;
@@ -1087,41 +1226,89 @@ function addScorebookMark(game, playerId, inningKey, mark) {
   game.scorebook[inningKey][playerId] = game.scorebook[inningKey][playerId].slice(-4);
 }
 
-function placeBatterOnFirst(game, batterId) {
+function createScorebookEntry(result, reachedBase = null, options = {}) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    result,
+    basesReached: reachedBase ? [reachedBase] : [],
+    scored: Boolean(options.scored),
+    out: Boolean(options.out),
+  };
+}
+
+function updateRunnerScorebookProgress(game, playerId, inningKey, reachedBase, scored = false) {
+  const entry = getLatestScorebookEntry(game, playerId, inningKey);
+  if (!entry) {
+    return;
+  }
+
+  if (reachedBase && !entry.basesReached.includes(reachedBase)) {
+    entry.basesReached.push(reachedBase);
+    entry.basesReached.sort((a, b) => a - b);
+  }
+
+  if (scored) {
+    entry.scored = true;
+  }
+}
+
+function markRunnerScorebookOut(game, playerId, inningKey) {
+  const entry = getLatestScorebookEntry(game, playerId, inningKey);
+  if (entry) {
+    entry.out = true;
+  }
+}
+
+function getLatestScorebookEntry(game, playerId, inningKey) {
+  const entries = game.scorebook?.[inningKey]?.[playerId];
+  if (!Array.isArray(entries) || !entries.length) {
+    return null;
+  }
+  return entries[entries.length - 1];
+}
+
+function placeBatterOnFirst(game, batterId, inningKey) {
   if (!game.bases.first) {
     game.bases.first = batterId;
     return;
   }
 
   if (!game.bases.second) {
+    updateRunnerScorebookProgress(game, game.bases.first, inningKey, 2);
     game.bases.second = game.bases.first;
     game.bases.first = batterId;
     return;
   }
 
   if (!game.bases.third) {
+    updateRunnerScorebookProgress(game, game.bases.second, inningKey, 3);
+    updateRunnerScorebookProgress(game, game.bases.first, inningKey, 2);
     game.bases.third = game.bases.second;
     game.bases.second = game.bases.first;
     game.bases.first = batterId;
     return;
   }
 
-  scoreRunnerFromBase(game, "third");
+  scoreRunnerFromBase(game, "third", inningKey);
+  updateRunnerScorebookProgress(game, game.bases.second, inningKey, 3);
+  updateRunnerScorebookProgress(game, game.bases.first, inningKey, 2);
   game.bases.third = game.bases.second;
   game.bases.second = game.bases.first;
   game.bases.first = batterId;
 }
 
-function forceWalk(game, batterId) {
+function forceWalk(game, batterId, inningKey) {
   if (game.bases.first && game.bases.second && game.bases.third) {
-    scoreRunnerFromBase(game, "third");
+    scoreRunnerFromBase(game, "third", inningKey);
   }
 
   if (game.bases.first && game.bases.second) {
+    updateRunnerScorebookProgress(game, game.bases.second, inningKey, 3);
     game.bases.third = game.bases.second;
   }
 
   if (game.bases.first) {
+    updateRunnerScorebookProgress(game, game.bases.first, inningKey, 2);
     game.bases.second = game.bases.first;
   }
 
@@ -1132,18 +1319,20 @@ function moveBaseRunner(base, action) {
   updateActiveTeam((team) => {
     const runnerId = team.game.bases[base];
     const runnerName = getPlayerName(team.players, runnerId);
+    const inningKey = String(team.game.inning);
     if (!runnerId && action !== "clear") {
       return;
     }
 
     if (action === "advance") {
       if (base === "third") {
-        scoreRunnerFromBase(team.game, "third");
+        scoreRunnerFromBase(team.game, "third", inningKey);
         addGameLog(team.game, `${runnerName} advanced`, "Scored from 3rd");
         return;
       }
 
       const nextBase = base === "first" ? "second" : "third";
+      updateRunnerScorebookProgress(team.game, runnerId, inningKey, nextBase === "second" ? 2 : 3);
       team.game.bases[nextBase] = runnerId;
       team.game.bases[base] = "";
       addGameLog(team.game, `${runnerName} advanced`, `${formatBase(base)} to ${formatBase(nextBase)}`);
@@ -1151,13 +1340,14 @@ function moveBaseRunner(base, action) {
     }
 
     if (action === "score") {
-      scoreRunnerFromBase(team.game, base);
+      scoreRunnerFromBase(team.game, base, inningKey);
       addGameLog(team.game, `${runnerName} scored`);
       return;
     }
 
     if (action === "out") {
       team.game.bases[base] = "";
+      markRunnerScorebookOut(team.game, runnerId, inningKey);
       team.game.outs = Math.min(3, team.game.outs + 1);
       if (team.game.outs >= 3) {
         team.game.outs = 0;
@@ -1172,11 +1362,12 @@ function moveBaseRunner(base, action) {
   });
 }
 
-function scoreRunnerFromBase(game, base) {
+function scoreRunnerFromBase(game, base, inningKey) {
   if (!game.bases[base]) {
     return;
   }
 
+  updateRunnerScorebookProgress(game, game.bases[base], inningKey, base === "first" ? 1 : base === "second" ? 2 : 3, true);
   game.bases[base] = "";
   game.teamScore += 1;
   game.totals.runs += 1;
