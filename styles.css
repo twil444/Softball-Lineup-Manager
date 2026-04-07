@@ -439,7 +439,7 @@ select {
 .grid-player-select {
   min-height: 34px;
   padding: 4px 6px;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   border-radius: 10px;
 }
 
@@ -1020,7 +1020,7 @@ select {
   .grid-player-select {
     min-height: 32px;
     padding: 3px 4px;
-    font-size: 0.64rem;
+    font-size: 0.58rem;
   }
 
   .inning-card-actions {

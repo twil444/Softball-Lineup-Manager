@@ -1145,6 +1145,7 @@ function renderDefenseGrid() {
         team.players,
         playerId,
         rowKey.startsWith("BENCH_") ? "Bench" : "Open",
+        formatGridPlayerOption,
       );
       if (rules.lockedPositions.includes(rowKey)) {
         select.disabled = true;
@@ -1806,7 +1807,7 @@ function scoreRunnerFromBase(game, base, inningKey) {
   game.totals.runs += 1;
 }
 
-function populatePlayerOptions(select, players, selectedId, emptyLabel = "Open") {
+function populatePlayerOptions(select, players, selectedId, emptyLabel = "Open", formatter = formatPlayerOption) {
   select.innerHTML = "";
   const emptyOption = document.createElement("option");
   emptyOption.value = "";
@@ -1817,7 +1818,7 @@ function populatePlayerOptions(select, players, selectedId, emptyLabel = "Open")
   players.forEach((player) => {
     const option = document.createElement("option");
     option.value = player.id;
-    option.textContent = formatPlayerOption(players, player.id);
+    option.textContent = formatter(players, player.id);
     option.selected = player.id === selectedId;
     select.append(option);
   });
@@ -1827,6 +1828,22 @@ function formatPlayerOption(players, playerId) {
   const battingNumber = getBattingNumber(players, playerId);
   const playerName = getPlayerName(players, playerId);
   return battingNumber ? `${battingNumber}. ${playerName}` : playerName;
+}
+
+function formatGridPlayerOption(players, playerId) {
+  const playerName = getCompactPlayerName(players, playerId);
+  return playerName;
+}
+
+function getCompactPlayerName(players, playerId) {
+  const fullName = getPlayerName(players, playerId);
+  if (!fullName || fullName === "Unknown") {
+    return "Open";
+  }
+  const parts = fullName.trim().split(/\s+/);
+  const firstName = parts[0] || "";
+  const lastInitial = parts.length > 1 ? ` ${parts[parts.length - 1][0] || ""}` : "";
+  return `${firstName}${lastInitial}`.trim();
 }
 
 function getBenchPlayers(players, assignments) {
