@@ -3,6 +3,20 @@ const POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"];
 const OUTFIELD_POSITIONS = ["LF", "LCF", "RCF", "RF"];
 const PREFERENCE_OPTIONS = ["P", "C", "1B", "2B", "3B", "SS", "OF"];
 const BASES = ["first", "second", "third"];
+const PLAYER_TINTS = [
+  "#ffbfb5",
+  "#ffd65c",
+  "#b8e7a5",
+  "#9fc5ff",
+  "#cfb3ff",
+  "#ffbf80",
+  "#8ee3d1",
+  "#ff9fd1",
+  "#b7df4a",
+  "#7fd7ff",
+  "#7db7ff",
+  "#c7a6ff",
+];
 const TEAM_RULES = {
   "team-a": {
     optimizePositions: ["1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"],
@@ -108,8 +122,9 @@ function createDefaultGame() {
 function rebalanceDefense(team, inningCount) {
   const players = team.players;
   const rules = getTeamRules(team);
-  const optimizedPositions = rules.optimizePositions;
+  const optimizedPositions = getOptimizedAssignmentOrder(rules.optimizePositions);
   const lockedPositions = rules.lockedPositions;
+  const balanceSeed = balanceCycleState[team.id] || 0;
   const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
   const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
   const fieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
@@ -143,7 +158,7 @@ function rebalanceDefense(team, inningCount) {
               return lastBenchDelta;
             }
 
-            return players.findIndex((player) => player.id === a.id) - players.findIndex((player) => player.id === b.id);
+            return getSeededRosterIndex(players, a.id, balanceSeed) - getSeededRosterIndex(players, b.id, balanceSeed);
           })
           .slice(0, benchSlotsPerInning)
       : [];
@@ -170,15 +185,15 @@ function rebalanceDefense(team, inningCount) {
           return benchDelta;
         }
 
-        const aIndex = players.findIndex((player) => player.id === a.id);
-        const bIndex = players.findIndex((player) => player.id === b.id);
+        const aIndex = getSeededRosterIndex(players, a.id, balanceSeed);
+        const bIndex = getSeededRosterIndex(players, b.id, balanceSeed);
         return ((aIndex - inning + players.length) % players.length) - ((bIndex - inning + players.length) % players.length);
       });
 
     const remainingPlayers = [...availablePlayers];
     const previousAssignments = inning > 1 ? team.innings[String(inning - 1)] : null;
     optimizedPositions.forEach((position) => {
-      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts, previousAssignments);
+      const player = choosePlayerForPosition(remainingPlayers, players, position, positionCounts, previousAssignments, { balanceSeed });
       assignments[position] = player?.id || "";
       if (player) {
         fieldCounts[player.id] += 1;
@@ -195,7 +210,7 @@ function rebalanceDefense(team, inningCount) {
 function rebalanceSingleInning(team, targetInning, inningCount) {
   const players = team.players;
   const rules = getTeamRules(team);
-  const optimizedPositions = rules.optimizePositions;
+  const optimizedPositions = getOptimizedAssignmentOrder(rules.optimizePositions);
   const lockedPositions = rules.lockedPositions;
   const benchSlotsPerInning = Math.max(players.length - POSITIONS.length, 0);
   const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
@@ -316,37 +331,39 @@ function getTeamRules(team) {
   return TEAM_RULES[team.id] || { optimizePositions: [...POSITIONS], lockedPositions: [] };
 }
 
+function getOptimizedAssignmentOrder(positions) {
+  const priorityOrder = ["LF", "LCF", "RCF", "RF", "SS", "2B", "1B", "3B", "P", "C"];
+  return [...positions].sort((a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
+}
+
 function choosePlayerForPosition(remainingPlayers, rosterOrder, position, positionCounts, previousAssignments, options = {}) {
   if (!remainingPlayers.length) {
     return null;
   }
 
-  const avoidIds = new Set();
-  if (previousAssignments?.[position]) {
-    avoidIds.add(previousAssignments[position]);
-  }
-  if (options.refreshAssignments?.[position]) {
-    avoidIds.add(options.refreshAssignments[position]);
-  }
+  const hardPool = remainingPlayers.filter((player) => positionCounts[player.id][position] < 2);
+  const legalPool = hardPool.length ? hardPool : remainingPlayers;
+  const strongAvoidIds = getStrongAvoidIds(position, previousAssignments, options.refreshAssignments);
+  const strongPool = legalPool.filter((player) => !strongAvoidIds.has(player.id));
+  const preferredStrongPool = getPreferredPlayers(strongPool, position);
+  const preferredLegalPool = getPreferredPlayers(legalPool, position);
 
-  const avoidRepeatPlayers = remainingPlayers.filter((player) => !avoidIds.has(player.id));
-
-  const preferredPool = remainingPlayers.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
-  const preferredNonRepeatPool = avoidRepeatPlayers.filter((player) => preferredPool.some((preferredPlayer) => preferredPlayer.id === player.id));
-
-  if (preferredNonRepeatPool.length) {
-    return sortPlayersForPosition(preferredNonRepeatPool, rosterOrder, position, positionCounts, true)[0];
+  if (preferredStrongPool.length) {
+    return sortPlayersForPosition(preferredStrongPool, rosterOrder, position, positionCounts, true, options.balanceSeed)[0];
   }
 
-  if (preferredPool.length) {
-    return sortPlayersForPosition(preferredPool, rosterOrder, position, positionCounts, true)[0];
+  if (strongPool.length) {
+    return sortPlayersForPosition(strongPool, rosterOrder, position, positionCounts, false, options.balanceSeed)[0];
   }
 
-  const fallbackPool = avoidRepeatPlayers.length ? avoidRepeatPlayers : remainingPlayers;
-  return sortPlayersForPosition(fallbackPool, rosterOrder, position, positionCounts, false)[0];
+  if (preferredLegalPool.length) {
+    return sortPlayersForPosition(preferredLegalPool, rosterOrder, position, positionCounts, true, options.balanceSeed)[0];
+  }
+
+  return sortPlayersForPosition(legalPool, rosterOrder, position, positionCounts, false, options.balanceSeed)[0];
 }
 
-function sortPlayersForPosition(players, rosterOrder, position, positionCounts, usePreferenceRank) {
+function sortPlayersForPosition(players, rosterOrder, position, positionCounts, usePreferenceRank, balanceSeed = 0) {
   return [...players].sort((a, b) => {
     if (usePreferenceRank) {
       const preferenceDelta = getPreferenceRank(a.preferences, position) - getPreferenceRank(b.preferences, position);
@@ -359,8 +376,42 @@ function sortPlayersForPosition(players, rosterOrder, position, positionCounts, 
     if (varietyDelta !== 0) {
       return varietyDelta;
     }
-    return rosterOrder.findIndex((player) => player.id === a.id) - rosterOrder.findIndex((player) => player.id === b.id);
+    return getSeededRosterIndex(rosterOrder, a.id, balanceSeed) - getSeededRosterIndex(rosterOrder, b.id, balanceSeed);
   });
+}
+
+function getSeededRosterIndex(players, playerId, balanceSeed = 0) {
+  const index = players.findIndex((player) => player.id === playerId);
+  if (index < 0) {
+    return index;
+  }
+  return (index + balanceSeed) % players.length;
+}
+
+function getStrongAvoidIds(position, previousAssignments, refreshAssignments) {
+  const avoidIds = new Set();
+
+  if (previousAssignments?.[position]) {
+    avoidIds.add(previousAssignments[position]);
+  }
+
+  if (OUTFIELD_POSITIONS.includes(position) && previousAssignments) {
+    OUTFIELD_POSITIONS.forEach((outfieldPosition) => {
+      if (previousAssignments[outfieldPosition]) {
+        avoidIds.add(previousAssignments[outfieldPosition]);
+      }
+    });
+  }
+
+  if (refreshAssignments?.[position]) {
+    avoidIds.add(refreshAssignments[position]);
+  }
+
+  return avoidIds;
+}
+
+function getPreferredPlayers(players, position) {
+  return players.filter((player) => player.preferences.includes(position) || (player.preferences.includes("OF") && OUTFIELD_POSITIONS.includes(position)));
 }
 
 function evaluateBenchRefreshImpact(team, targetInning, inningCount) {
@@ -457,9 +508,121 @@ function getDefenseValidation(team, inningCount) {
         });
       }
     });
+
+    team.players.forEach((player) => {
+      const previousOutfield = OUTFIELD_POSITIONS.some((position) => previousAssignments[position] === player.id);
+      const currentOutfield = OUTFIELD_POSITIONS.some((position) => currentAssignments[position] === player.id);
+      if (previousOutfield && currentOutfield) {
+        issues.push({
+          severity: "warn",
+          text: `${player.name} is in the outfield in both innings ${inning - 1} and ${inning}.`,
+        });
+      }
+    });
   }
 
   return issues;
+}
+
+function getDefenseViolationMap(team, inningCount) {
+  const map = {};
+  const rules = getTeamRules(team);
+  const benchCounts = getBenchCounts(team, inningCount);
+  const benchValues = Object.values(benchCounts);
+  const maxBench = Math.max(...benchValues, 0);
+  const minBench = Math.min(...benchValues, 0);
+
+  if (maxBench - minBench > 1) {
+    for (let inning = 1; inning <= inningCount; inning += 1) {
+      const assignments = team.innings[String(inning)] || createEmptyAssignments();
+      const benchIds = getBenchPlayers(team.players, assignments);
+      benchIds.forEach((playerId, index) => {
+        if (benchCounts[playerId] === maxBench) {
+          addDefenseViolation(map, String(inning), `BENCH_${index + 1}`, playerId);
+        }
+      });
+    }
+  }
+
+  for (let inning = 1; inning <= inningCount; inning += 1) {
+    const assignments = team.innings[String(inning)] || createEmptyAssignments();
+    const counts = getAssignmentCounts(assignments);
+    Object.entries(counts).forEach(([playerId, count]) => {
+      if (count <= 1) {
+        return;
+      }
+      POSITIONS.forEach((position) => {
+        if (assignments[position] === playerId) {
+          addDefenseViolation(map, String(inning), position, playerId);
+        }
+      });
+    });
+  }
+
+  team.players.forEach((player) => {
+    POSITIONS.forEach((position) => {
+      if (rules.lockedPositions.includes(position)) {
+        return;
+      }
+      const inningsUsed = [];
+      for (let inning = 1; inning <= inningCount; inning += 1) {
+        if (team.innings[String(inning)]?.[position] === player.id) {
+          inningsUsed.push(String(inning));
+        }
+      }
+      if (inningsUsed.length > 2) {
+        inningsUsed.forEach((inningKey) => {
+          addDefenseViolation(map, inningKey, position, player.id);
+        });
+      }
+    });
+  });
+
+  for (let inning = 2; inning <= inningCount; inning += 1) {
+    const previousAssignments = team.innings[String(inning - 1)] || createEmptyAssignments();
+    const currentAssignments = team.innings[String(inning)] || createEmptyAssignments();
+    rules.optimizePositions.forEach((position) => {
+      if (previousAssignments[position] && previousAssignments[position] === currentAssignments[position]) {
+        addDefenseViolation(map, String(inning - 1), position, currentAssignments[position]);
+        addDefenseViolation(map, String(inning), position, currentAssignments[position]);
+      }
+    });
+
+    team.players.forEach((player) => {
+      const previousOutfieldPositions = OUTFIELD_POSITIONS.filter((position) => previousAssignments[position] === player.id);
+      const currentOutfieldPositions = OUTFIELD_POSITIONS.filter((position) => currentAssignments[position] === player.id);
+      if (previousOutfieldPositions.length && currentOutfieldPositions.length) {
+        previousOutfieldPositions.forEach((position) => addDefenseViolation(map, String(inning - 1), position, player.id));
+        currentOutfieldPositions.forEach((position) => addDefenseViolation(map, String(inning), position, player.id));
+      }
+    });
+  }
+
+  return map;
+}
+
+function addDefenseViolation(map, inningKey, slotKey, playerId) {
+  map[inningKey] ||= {};
+  map[inningKey][slotKey] = { playerId, invalid: true };
+}
+
+function applyViolationClass(element, violationMap, inningKey, slotKey, playerId) {
+  if (!playerId) {
+    return;
+  }
+  if (violationMap?.[inningKey]?.[slotKey]?.playerId === playerId) {
+    element.classList.add("rule-violation");
+  }
+}
+
+function applyPlayerRowViolationClass(element, violationMap, inningKey, playerId) {
+  if (!playerId || !violationMap?.[inningKey]) {
+    return;
+  }
+  const hasViolation = Object.values(violationMap[inningKey]).some((violation) => violation.playerId === playerId);
+  if (hasViolation) {
+    element.classList.add("rule-violation");
+  }
 }
 
 function getPreferenceRank(preferences, position) {
@@ -473,6 +636,9 @@ function getPreferenceRank(preferences, position) {
   }
   return 999;
 }
+
+const balanceCycleState = {};
+const defenseUndoState = {};
 
 function loadState() {
   try {
@@ -616,6 +782,7 @@ function normalizeScorebookEntry(entry, inningKey, playerId, entryIndex) {
 let state = loadState();
 let activeSection = "batting";
 let draggedRosterIndex = null;
+const lineupCardCollapseState = {};
 
 const elements = {
   sectionNavButtons: Array.from(document.querySelectorAll(".section-nav-button")),
@@ -631,6 +798,9 @@ const elements = {
   defenseValidation: document.querySelector("#defense-validation"),
   preferencesList: document.querySelector("#preferences-list"),
   inningCount: document.querySelector("#inning-count"),
+  balanceDefense: document.querySelector("#balance-defense"),
+  undoInningGrid: document.querySelector("#undo-inning-grid"),
+  undoPlayerGrid: document.querySelector("#undo-player-grid"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
   defenseDiamond: document.querySelector("#defense-diamond"),
   resetGame: document.querySelector("#reset-game"),
@@ -676,18 +846,37 @@ for (let inning = 1; inning <= 7; inning += 1) {
   elements.defenseVisualInning.append(option.cloneNode(true));
 }
 
-elements.teamName.addEventListener("input", (event) => {
+elements.teamName?.addEventListener("input", (event) => {
   updateActiveTeam((team) => {
     team.name = event.target.value;
   });
 });
 
-elements.inningCount.addEventListener("change", (event) => {
+elements.inningCount?.addEventListener("change", (event) => {
   state.innings = clampInnings(event.target.value);
   saveAndRender();
 });
 
-elements.defenseVisualInning.addEventListener("change", () => {
+elements.balanceDefense?.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    balanceCycleState[team.id] = (balanceCycleState[team.id] || 0) + 1;
+    rebalanceDefense(team, state.innings);
+  });
+});
+
+elements.undoInningGrid?.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    restoreDefenseUndo(team);
+  });
+});
+
+elements.undoPlayerGrid?.addEventListener("click", () => {
+  updateActiveTeam((team) => {
+    restoreDefenseUndo(team);
+  });
+});
+
+elements.defenseVisualInning?.addEventListener("change", () => {
   renderDefenseDiamond();
 });
 
@@ -704,7 +893,7 @@ elements.subsectionToggles.forEach((button) => {
   });
 });
 
-elements.addPlayer.addEventListener("click", () => {
+elements.addPlayer?.addEventListener("click", () => {
   updateActiveTeam((team) => {
     const nextNumber = team.players.length + 1;
     const playerId = `${team.id}-player-${Date.now()}`;
@@ -716,25 +905,25 @@ elements.addPlayer.addEventListener("click", () => {
   });
 });
 
-elements.resetGame.addEventListener("click", () => {
+elements.resetGame?.addEventListener("click", () => {
   updateActiveTeam((team) => {
     team.game = createDefaultGame();
   });
 });
 
-elements.opponentMinus.addEventListener("click", () => adjustGameNumber("opponentScore", -1, 0));
-elements.opponentPlus.addEventListener("click", () => adjustGameNumber("opponentScore", 1, 0));
-elements.inningMinus.addEventListener("click", () => adjustGameNumber("inning", -1, 1));
-elements.inningPlus.addEventListener("click", () => adjustGameNumber("inning", 1, 1));
-elements.outsMinus.addEventListener("click", () => adjustGameNumber("outs", -1, 0, 3));
-elements.outsPlus.addEventListener("click", () => adjustGameNumber("outs", 1, 0, 3));
-elements.recordHit.addEventListener("click", () => recordPlateAppearance("Hit"));
-elements.recordWalk.addEventListener("click", () => recordPlateAppearance("Walk"));
-elements.recordOut.addEventListener("click", () => recordPlateAppearance("Out"));
-elements.recordStrikeout.addEventListener("click", () => recordPlateAppearance("Strikeout"));
-elements.prevBatter.addEventListener("click", () => shiftCurrentBatter(-1));
-elements.nextBatter.addEventListener("click", () => shiftCurrentBatter(1));
-elements.clearBases.addEventListener("click", () => {
+elements.opponentMinus?.addEventListener("click", () => adjustGameNumber("opponentScore", -1, 0));
+elements.opponentPlus?.addEventListener("click", () => adjustGameNumber("opponentScore", 1, 0));
+elements.inningMinus?.addEventListener("click", () => adjustGameNumber("inning", -1, 1));
+elements.inningPlus?.addEventListener("click", () => adjustGameNumber("inning", 1, 1));
+elements.outsMinus?.addEventListener("click", () => adjustGameNumber("outs", -1, 0, 3));
+elements.outsPlus?.addEventListener("click", () => adjustGameNumber("outs", 1, 0, 3));
+elements.recordHit?.addEventListener("click", () => recordPlateAppearance("Hit"));
+elements.recordWalk?.addEventListener("click", () => recordPlateAppearance("Walk"));
+elements.recordOut?.addEventListener("click", () => recordPlateAppearance("Out"));
+elements.recordStrikeout?.addEventListener("click", () => recordPlateAppearance("Strikeout"));
+elements.prevBatter?.addEventListener("click", () => shiftCurrentBatter(-1));
+elements.nextBatter?.addEventListener("click", () => shiftCurrentBatter(1));
+elements.clearBases?.addEventListener("click", () => {
   updateActiveTeam((team) => {
     team.game.bases = createDefaultGame().bases;
     addGameLog(team.game, "Bases cleared");
@@ -753,7 +942,53 @@ function updateActiveTeam(mutator) {
 
 function saveAndRender() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  render();
+  safeRender();
+}
+
+function safeRender() {
+  try {
+    clearRuntimeError();
+    render();
+  } catch (error) {
+    reportRuntimeError("Render failed", error);
+  }
+}
+
+function reportRuntimeError(context, error) {
+  console.error(context, error);
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  showRuntimeError(`${context}. ${message}`);
+}
+
+function showRuntimeError(message) {
+  let overlay = document.querySelector("#runtime-error-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "runtime-error-overlay";
+    overlay.className = "runtime-error-overlay";
+    overlay.innerHTML = `
+      <div class="runtime-error-card">
+        <div class="runtime-error-header">
+          <strong>App Error</strong>
+          <button type="button" class="ghost-button runtime-error-close">Close</button>
+        </div>
+        <p class="runtime-error-text"></p>
+      </div>
+    `;
+    overlay.querySelector(".runtime-error-close")?.addEventListener("click", () => {
+      overlay.remove();
+    });
+    document.body.append(overlay);
+  }
+
+  const text = overlay.querySelector(".runtime-error-text");
+  if (text) {
+    text.textContent = message;
+  }
+}
+
+function clearRuntimeError() {
+  document.querySelector("#runtime-error-overlay")?.remove();
 }
 
 function render() {
@@ -809,10 +1044,19 @@ function renderTeamTabs() {
     elements.teamTabs.append(button);
   }
 
-  elements.teamName.value = getActiveTeam().name;
+  const activeTeam = getActiveTeam();
+  elements.teamName.value = activeTeam.name;
   elements.inningCount.value = String(state.innings);
   if (Number(elements.defenseVisualInning.value) > state.innings || !elements.defenseVisualInning.value) {
     elements.defenseVisualInning.value = "1";
+  }
+
+  const canUndoDefense = Boolean(defenseUndoState[activeTeam.id]);
+  if (elements.undoInningGrid) {
+    elements.undoInningGrid.disabled = !canUndoDefense;
+  }
+  if (elements.undoPlayerGrid) {
+    elements.undoPlayerGrid.disabled = !canUndoDefense;
   }
 }
 
@@ -942,19 +1186,24 @@ function renderLineups() {
 
   for (let inning = 1; inning <= state.innings; inning += 1) {
     const inningKey = String(inning);
+    const collapseKey = `${team.id}-${inningKey}`;
     const assignments = team.innings[inningKey];
     const duplicateGroups = getDuplicateAssignmentGroups(assignments);
     const card = elements.inningCardTemplate.content.firstElementChild.cloneNode(true);
     card.querySelector("h3").textContent = `Inning ${inning}`;
     const collapseButton = card.querySelector(".inning-collapse-button");
     const cardContent = card.querySelector(".inning-card-content");
-    if (inning > 1) {
+    const isCollapsed = lineupCardCollapseState[collapseKey] ?? (inning > 1);
+    if (isCollapsed) {
       cardContent.classList.add("is-collapsed");
       collapseButton.textContent = "Show";
+    } else {
+      collapseButton.textContent = "Hide";
     }
     collapseButton.addEventListener("click", () => {
-      const isCollapsed = cardContent.classList.toggle("is-collapsed");
-      collapseButton.textContent = isCollapsed ? "Show" : "Hide";
+      const nextCollapsed = cardContent.classList.toggle("is-collapsed");
+      lineupCardCollapseState[collapseKey] = nextCollapsed;
+      collapseButton.textContent = nextCollapsed ? "Show" : "Hide";
     });
     card.querySelector(".inning-refresh-button").addEventListener("click", () => {
       updateActiveTeam((activeTeam) => {
@@ -1106,6 +1355,7 @@ function renderDefenseValidation() {
 
 function renderDefenseGrid() {
   const team = getActiveTeam();
+  const violationMap = getDefenseViolationMap(team, state.innings);
   elements.defenseGrid.innerHTML = "";
   const rules = getTeamRules(team);
   const header = document.createElement("div");
@@ -1137,7 +1387,9 @@ function renderDefenseGrid() {
         : inningAssignments[rowKey];
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${rowKey.startsWith("BENCH_") ? " bench" : ""}`;
+      applyPlayerTint(cell, team.players, playerId);
       applyDuplicateGroupClass(cell, duplicateGroups[playerId]);
+      applyViolationClass(cell, violationMap, String(inning), rowKey, playerId);
       const select = document.createElement("select");
       select.className = "grid-player-select";
       populatePlayerOptions(
@@ -1151,7 +1403,11 @@ function renderDefenseGrid() {
         select.disabled = true;
       } else {
         select.addEventListener("change", (event) => {
+          if (!wouldDefenseGridSelectionChange(team, String(inning), rowKey, event.target.value)) {
+            return;
+          }
           updateActiveTeam((activeTeam) => {
+            saveDefenseUndoSnapshot(activeTeam);
             applyDefenseGridSelection(activeTeam, String(inning), rowKey, event.target.value);
           });
         });
@@ -1166,7 +1422,9 @@ function renderDefenseGrid() {
 
 function renderPlayerDefenseGrid() {
   const team = getActiveTeam();
+  const violationMap = getDefenseViolationMap(team, state.innings);
   elements.playerDefenseGrid.innerHTML = "";
+  const rules = getTeamRules(team);
 
   const header = document.createElement("div");
   header.className = "defense-grid-row defense-grid-header-row player-defense-header-row";
@@ -1185,10 +1443,25 @@ function renderPlayerDefenseGrid() {
       const assignments = team.innings[String(inning)];
       const duplicateGroups = getDuplicateAssignmentGroups(assignments);
       const position = POSITIONS.find((slot) => assignments[slot] === player.id);
+      const benchIds = getBenchPlayers(team.players, assignments);
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${position ? "" : " bench"}`;
+      applyPlayerTint(cell, team.players, player.id);
       applyDuplicateGroupClass(cell, duplicateGroups[player.id]);
-      cell.innerHTML = `<strong>${position || "BN"}</strong>`;
+      applyPlayerRowViolationClass(cell, violationMap, String(inning), player.id);
+      const select = document.createElement("select");
+      select.className = "grid-player-select";
+      populatePlayerSlotOptions(select, rules, benchIds.length, position || getBenchSlotKey(benchIds, player.id));
+      select.addEventListener("change", (event) => {
+        if (!wouldPlayerGridSelectionChange(team, String(inning), player.id, event.target.value)) {
+          return;
+        }
+        updateActiveTeam((activeTeam) => {
+          saveDefenseUndoSnapshot(activeTeam);
+          applyPlayerGridSelection(activeTeam, String(inning), player.id, event.target.value);
+        });
+      });
+      cell.append(select);
       row.append(cell);
     }
 
@@ -1654,6 +1927,21 @@ function updateRunnerScorebookProgress(game, playerId, inningKey, reachedBase, s
   }
 }
 
+function applyPlayerTint(element, players, playerId) {
+  if (!playerId) {
+    return;
+  }
+
+  const playerIndex = players.findIndex((player) => player.id === playerId);
+  if (playerIndex < 0) {
+    return;
+  }
+
+  const tint = PLAYER_TINTS[playerIndex % PLAYER_TINTS.length];
+  element.classList.add("player-tint-cell");
+  element.style.setProperty("--player-tint", tint);
+}
+
 function applyDefenseGridSelection(team, inningKey, rowKey, chosenId) {
   const assignments = team.innings[inningKey];
   if (!assignments) {
@@ -1684,6 +1972,96 @@ function applyDefenseGridSelection(team, inningKey, rowKey, chosenId) {
   }
 
   assignments[rowKey] = chosenId;
+}
+
+function saveDefenseUndoSnapshot(team) {
+  defenseUndoState[team.id] = {
+    innings: JSON.parse(JSON.stringify(team.innings)),
+  };
+}
+
+function restoreDefenseUndo(team) {
+  const snapshot = defenseUndoState[team.id];
+  if (!snapshot) {
+    return;
+  }
+  team.innings = JSON.parse(JSON.stringify(snapshot.innings));
+  delete defenseUndoState[team.id];
+}
+
+function wouldDefenseGridSelectionChange(team, inningKey, rowKey, chosenId) {
+  const assignments = team.innings[inningKey];
+  if (!assignments) {
+    return false;
+  }
+
+  if (rowKey.startsWith("BENCH_")) {
+    const benchIndex = Number(rowKey.split("_")[1]) - 1;
+    const benchIds = getBenchPlayers(team.players, assignments);
+    const currentBenchId = benchIds[benchIndex] || "";
+    return currentBenchId !== chosenId;
+  }
+
+  return (assignments[rowKey] || "") !== chosenId;
+}
+
+function populatePlayerSlotOptions(select, rules, benchCount, selectedSlot) {
+  select.innerHTML = "";
+
+  const slotOptions = rules.optimizePositions.map((position) => ({ value: position, label: position }));
+  for (let index = 0; index < benchCount; index += 1) {
+    slotOptions.push({ value: `BENCH_${index + 1}`, label: `BN${index + 1}` });
+  }
+
+  slotOptions.forEach((slot) => {
+    const option = document.createElement("option");
+    option.value = slot.value;
+    option.textContent = slot.label;
+    option.selected = slot.value === selectedSlot;
+    select.append(option);
+  });
+}
+
+function getBenchSlotKey(benchIds, playerId) {
+  const index = benchIds.findIndex((benchId) => benchId === playerId);
+  return index >= 0 ? `BENCH_${index + 1}` : "BENCH_1";
+}
+
+function applyPlayerGridSelection(team, inningKey, playerId, chosenSlot) {
+  const assignments = team.innings[inningKey];
+  if (!assignments || !playerId || !chosenSlot) {
+    return;
+  }
+
+  const currentPosition = POSITIONS.find((position) => assignments[position] === playerId);
+  const benchIds = getBenchPlayers(team.players, assignments);
+
+  if (chosenSlot.startsWith("BENCH_")) {
+    const benchIndex = Number(chosenSlot.split("_")[1]) - 1;
+    const targetBenchId = benchIds[benchIndex] || "";
+    if (currentPosition) {
+      assignments[currentPosition] = targetBenchId || "";
+    }
+    return;
+  }
+
+  const targetOccupantId = assignments[chosenSlot] || "";
+  if (currentPosition) {
+    assignments[currentPosition] = targetOccupantId || "";
+  }
+  assignments[chosenSlot] = playerId;
+}
+
+function wouldPlayerGridSelectionChange(team, inningKey, playerId, chosenSlot) {
+  const assignments = team.innings[inningKey];
+  if (!assignments || !playerId || !chosenSlot) {
+    return false;
+  }
+
+  const currentPosition = POSITIONS.find((position) => assignments[position] === playerId);
+  const benchIds = getBenchPlayers(team.players, assignments);
+  const currentSlot = currentPosition || getBenchSlotKey(benchIds, playerId);
+  return currentSlot !== chosenSlot;
 }
 
 function markRunnerScorebookOut(game, playerId, inningKey) {
@@ -1916,7 +2294,15 @@ function formatBase(base) {
   return base === "first" ? "1st" : base === "second" ? "2nd" : "3rd";
 }
 
-render();
+safeRender();
+
+window.addEventListener("error", (event) => {
+  reportRuntimeError("JavaScript error", event.error || event.message);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  reportRuntimeError("Unhandled promise rejection", event.reason);
+});
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
