@@ -84,6 +84,7 @@ function createDefaultTeam(id, name, playerNames) {
     name: playerName,
     preferences: [],
     blockedPosition: "",
+    unavailable: false,
   }));
 
   const innings = {};
@@ -134,7 +135,7 @@ function createDefaultGame() {
 }
 
 function rebalanceDefense(team, inningCount) {
-  const players = team.players;
+  const players = getAvailablePlayers(team);
   const rules = getTeamRules(team);
   const optimizedPositions = getOptimizedAssignmentOrder(rules.optimizePositions);
   const lockedPositions = rules.lockedPositions;
@@ -242,7 +243,7 @@ function buildBalancedDefenseCandidate(team, inningCount, balanceSeed) {
 }
 
 function rebalanceSingleInning(team, targetInning, inningCount) {
-  const players = team.players;
+  const players = getAvailablePlayers(team);
   const rules = getTeamRules(team);
   const optimizedPositions = getOptimizedAssignmentOrder(rules.optimizePositions);
   const lockedPositions = rules.lockedPositions;
@@ -556,9 +557,10 @@ function evaluateBenchRefreshImpact(team, targetInning, inningCount) {
 }
 
 function getBenchCounts(team, inningCount) {
-  const benchCounts = Object.fromEntries(team.players.map((player) => [player.id, 0]));
+  const players = getAvailablePlayers(team);
+  const benchCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
   for (let inning = 1; inning <= inningCount; inning += 1) {
-    const benchIds = getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments());
+    const benchIds = getBenchPlayers(players, team.innings[String(inning)] || createEmptyAssignments());
     benchIds.forEach((playerId) => {
       benchCounts[playerId] += 1;
     });
@@ -605,7 +607,8 @@ function getEligibleBenchPlayers(players, lockedIds, benchCounts, inning, inning
 }
 
 function getOutfieldCounts(team, inningCount) {
-  const outfieldCounts = Object.fromEntries(team.players.map((player) => [player.id, 0]));
+  const players = getAvailablePlayers(team);
+  const outfieldCounts = Object.fromEntries(players.map((player) => [player.id, 0]));
   for (let inning = 1; inning <= inningCount; inning += 1) {
     const assignments = team.innings[String(inning)] || createEmptyAssignments();
     OUTFIELD_POSITIONS.forEach((position) => {
@@ -620,6 +623,7 @@ function getOutfieldCounts(team, inningCount) {
 
 function getDefenseValidation(team, inningCount) {
   const issues = [];
+  const players = getAvailablePlayers(team);
   const benchCounts = getBenchCounts(team, inningCount);
   const benchValues = Object.values(benchCounts);
   const maxBench = benchValues.length ? Math.max(...benchValues) : 0;
@@ -639,7 +643,7 @@ function getDefenseValidation(team, inningCount) {
   for (let inning = 1; inning <= inningCount; inning += 1) {
     const assignments = team.innings[String(inning)] || createEmptyAssignments();
     const fieldCount = new Set(Object.values(assignments).filter(Boolean)).size;
-    const expectedFieldCount = Math.min(POSITIONS.length, team.players.length);
+    const expectedFieldCount = Math.min(POSITIONS.length, players.length);
     if (fieldCount < expectedFieldCount) {
       issues.push({
         severity: "error",
@@ -649,10 +653,10 @@ function getDefenseValidation(team, inningCount) {
   }
 
   if (inningCount === 5) {
-    team.players.forEach((player) => {
+    players.forEach((player) => {
       let benchSeen = 0;
       for (let inning = 1; inning <= inningCount; inning += 1) {
-        const benchIds = getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments());
+        const benchIds = getBenchPlayers(players, team.innings[String(inning)] || createEmptyAssignments());
         if (benchIds.includes(player.id)) {
           benchSeen += 1;
           if (benchSeen >= 2 && inning < 5) {
@@ -668,9 +672,9 @@ function getDefenseValidation(team, inningCount) {
   }
 
   for (let inning = 2; inning <= inningCount; inning += 1) {
-    const previousBenchIds = new Set(getBenchPlayers(team.players, team.innings[String(inning - 1)] || createEmptyAssignments()));
-    const currentBenchIds = new Set(getBenchPlayers(team.players, team.innings[String(inning)] || createEmptyAssignments()));
-    team.players.forEach((player) => {
+    const previousBenchIds = new Set(getBenchPlayers(players, team.innings[String(inning - 1)] || createEmptyAssignments()));
+    const currentBenchIds = new Set(getBenchPlayers(players, team.innings[String(inning)] || createEmptyAssignments()));
+    players.forEach((player) => {
       if (previousBenchIds.has(player.id) && currentBenchIds.has(player.id)) {
         issues.push({
           severity: "error",
@@ -688,7 +692,7 @@ function getDefenseValidation(team, inningCount) {
   }
 
   for (let inning = 1; inning <= inningCount; inning += 1) {
-    const duplicateNames = getDuplicateAssignments(team.players, team.innings[String(inning)] || createEmptyAssignments());
+    const duplicateNames = getDuplicateAssignments(players, team.innings[String(inning)] || createEmptyAssignments());
     if (duplicateNames.length) {
       issues.push({
         severity: "error",
@@ -697,7 +701,7 @@ function getDefenseValidation(team, inningCount) {
     }
   }
 
-  team.players.forEach((player) => {
+  players.forEach((player) => {
     const outfieldCount = Array.from({ length: inningCount }, (_, index) => {
       const assignments = team.innings[String(index + 1)] || createEmptyAssignments();
       return OUTFIELD_POSITIONS.some((position) => assignments[position] === player.id) ? 1 : 0;
@@ -743,12 +747,12 @@ function getDefenseValidation(team, inningCount) {
       if (previousAssignments[position] && previousAssignments[position] === currentAssignments[position]) {
         issues.push({
           severity: "error",
-          text: `${getPlayerName(team.players, currentAssignments[position])} repeats ${position} in innings ${inning - 1} and ${inning}.`,
+          text: `${getPlayerName(players, currentAssignments[position])} repeats ${position} in innings ${inning - 1} and ${inning}.`,
         });
       }
     });
 
-    team.players.forEach((player) => {
+    players.forEach((player) => {
       const previousOutfield = OUTFIELD_POSITIONS.some((position) => previousAssignments[position] === player.id);
       const currentOutfield = OUTFIELD_POSITIONS.some((position) => currentAssignments[position] === player.id);
       if (previousOutfield && currentOutfield) {
@@ -797,11 +801,15 @@ function chooseBestBalancedDefense(team, inningCount, baseSeed) {
   team.innings = bestInnings;
 }
 
+function getAvailablePlayers(team) {
+  return team.players.filter((player) => !player.unavailable);
+}
+
 function getDefenseCountSummary(team, inningCount) {
   const benchCounts = getBenchCounts(team, inningCount);
   const outfieldCounts = getOutfieldCounts(team, inningCount);
 
-  return team.players.map((player) => ({
+  return getAvailablePlayers(team).map((player) => ({
     playerId: player.id,
     name: player.name,
     bench: benchCounts[player.id] || 0,
@@ -811,6 +819,7 @@ function getDefenseCountSummary(team, inningCount) {
 
 function getDefenseViolationMap(team, inningCount) {
   const map = {};
+  const players = getAvailablePlayers(team);
   const rules = getTeamRules(team);
   const benchCounts = getBenchCounts(team, inningCount);
   const benchValues = Object.values(benchCounts);
@@ -824,7 +833,7 @@ function getDefenseViolationMap(team, inningCount) {
   if (maxBench - minBench > 1) {
     for (let inning = 1; inning <= inningCount; inning += 1) {
       const assignments = team.innings[String(inning)] || createEmptyAssignments();
-      const benchIds = getBenchPlayers(team.players, assignments);
+      const benchIds = getBenchPlayers(players, assignments);
       benchIds.forEach((playerId, index) => {
         if (benchCounts[playerId] === maxBench) {
           addDefenseViolation(map, String(inning), `BENCH_${index + 1}`, playerId);
@@ -834,11 +843,11 @@ function getDefenseViolationMap(team, inningCount) {
   }
 
   if (inningCount === 5) {
-    team.players.forEach((player) => {
+    players.forEach((player) => {
       let benchSeen = 0;
       for (let inning = 1; inning <= inningCount; inning += 1) {
         const assignments = team.innings[String(inning)] || createEmptyAssignments();
-        const benchIds = getBenchPlayers(team.players, assignments);
+        const benchIds = getBenchPlayers(players, assignments);
         if (benchIds.includes(player.id)) {
           benchSeen += 1;
           if (benchSeen >= 2 && inning < 5) {
@@ -857,8 +866,8 @@ function getDefenseViolationMap(team, inningCount) {
   for (let inning = 2; inning <= inningCount; inning += 1) {
     const previousAssignments = team.innings[String(inning - 1)] || createEmptyAssignments();
     const currentAssignments = team.innings[String(inning)] || createEmptyAssignments();
-    const previousBenchIds = getBenchPlayers(team.players, previousAssignments);
-    const currentBenchIds = getBenchPlayers(team.players, currentAssignments);
+    const previousBenchIds = getBenchPlayers(players, previousAssignments);
+    const currentBenchIds = getBenchPlayers(players, currentAssignments);
     currentBenchIds.forEach((playerId, index) => {
       if (!previousBenchIds.includes(playerId)) {
         return;
@@ -885,7 +894,7 @@ function getDefenseViolationMap(team, inningCount) {
       });
     });
 
-    team.players.forEach((player) => {
+    players.forEach((player) => {
       POSITIONS.forEach((position) => {
         if (assignments[position] === player.id && isBlockedForPosition(player, position)) {
           addDefenseViolation(map, String(inning), position, player.id);
@@ -895,7 +904,7 @@ function getDefenseViolationMap(team, inningCount) {
 
   }
 
-  team.players.forEach((player) => {
+  players.forEach((player) => {
     POSITIONS.forEach((position) => {
       if (rules.lockedPositions.includes(position)) {
         return;
@@ -998,6 +1007,7 @@ function normalizeState(saved) {
           name: player.name || fallback.players[playerIndex]?.name || `Player ${playerIndex + 1}`,
           preferences: normalizePreferences(player.preferences),
           blockedPosition: normalizeBlockedPosition(player.blockedPosition),
+          unavailable: Boolean(player.unavailable),
         }))
       : fallback.players;
     const innings = {};
@@ -1047,6 +1057,7 @@ function applyRosterMigrations(teamId, players) {
       name: "Lauren S.",
       preferences: [],
       blockedPosition: "",
+      unavailable: false,
     },
   ];
 }
@@ -1278,6 +1289,7 @@ elements.addPlayer?.addEventListener("click", () => {
       name: `${team.name} Player ${nextNumber}`,
       preferences: [],
       blockedPosition: "",
+      unavailable: false,
     });
     team.game = normalizeGame(team.game, team.players);
   });
@@ -1477,10 +1489,11 @@ function renderRoster() {
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "move-button remove-button";
-    removeButton.textContent = "X";
-    removeButton.setAttribute("aria-label", `Remove ${player.name || "player"}`);
-    removeButton.addEventListener("click", () => removePlayer(index));
+    removeButton.textContent = player.unavailable ? "Active" : "Bench";
+    removeButton.setAttribute("aria-label", `${player.unavailable ? "Activate" : "Bench"} ${player.name || "player"}`);
+    removeButton.addEventListener("click", () => togglePlayerAvailability(index));
     row.querySelector(".row-actions").append(removeButton);
+    row.classList.toggle("unavailable-player", Boolean(player.unavailable));
 
     row.addEventListener("dragstart", () => {
       draggedRosterIndex = index;
@@ -1543,24 +1556,24 @@ function reorderPlayer(fromIndex, toIndex) {
   });
 }
 
-function removePlayer(index) {
+function togglePlayerAvailability(index) {
   updateActiveTeam((team) => {
-    if (team.players.length <= 1) {
+    const targetPlayer = team.players[index];
+    if (!targetPlayer) {
       return;
     }
-
-    const [removedPlayer] = team.players.splice(index, 1);
+    targetPlayer.unavailable = !targetPlayer.unavailable;
     for (let inning = 1; inning <= 7; inning += 1) {
       const assignments = team.innings[String(inning)];
       POSITIONS.forEach((position) => {
-        if (assignments[position] === removedPlayer.id) {
+        if (assignments[position] === targetPlayer.id) {
           assignments[position] = "";
         }
       });
     }
 
     BASES.forEach((base) => {
-      if (team.game.bases[base] === removedPlayer.id) {
+      if (team.game.bases[base] === targetPlayer.id) {
         team.game.bases[base] = "";
       }
     });
@@ -1570,6 +1583,7 @@ function removePlayer(index) {
 
 function renderLineups() {
   const team = getActiveTeam();
+  const players = getAvailablePlayers(team);
   const rules = getTeamRules(team);
   elements.lineupGrid.innerHTML = "";
 
@@ -1615,7 +1629,7 @@ function renderLineups() {
       row.querySelector("span").textContent = position;
       const select = row.querySelector("select");
       applyDuplicateGroupClass(row, duplicateGroups[assignments[position]]);
-      populatePlayerOptions(select, team.players, assignments[position]);
+      populatePlayerOptions(select, players, assignments[position]);
       select.addEventListener("change", (event) => {
         updateActiveTeam((activeTeam) => {
           activeTeam.innings[inningKey][position] = event.target.value;
@@ -1624,19 +1638,19 @@ function renderLineups() {
       positionsContainer.append(row);
     });
 
-    const benchIds = getBenchPlayers(team.players, assignments);
+    const benchIds = getBenchPlayers(players, assignments);
     benchIds.forEach((playerId, index) => {
       const row = elements.positionRowTemplate.content.firstElementChild.cloneNode(true);
       row.classList.add("bench-row");
       row.querySelector("span").textContent = `BN${index + 1}`;
       const select = row.querySelector("select");
       applyDuplicateGroupClass(row, duplicateGroups[playerId]);
-      populatePlayerOptions(select, team.players, playerId, "Open");
+      populatePlayerOptions(select, players, playerId, "Open");
       select.addEventListener("change", (event) => {
         updateActiveTeam((activeTeam) => {
           const chosenId = event.target.value;
           const inningAssignments = activeTeam.innings[inningKey];
-          const currentBench = getBenchPlayers(activeTeam.players, inningAssignments);
+          const currentBench = getBenchPlayers(getAvailablePlayers(activeTeam), inningAssignments);
           const replacementId = currentBench[index];
           POSITIONS.forEach((position) => {
             if (inningAssignments[position] === chosenId) {
@@ -1648,12 +1662,12 @@ function renderLineups() {
       positionsContainer.append(row);
     });
 
-    const duplicateNames = getDuplicateAssignments(team.players, assignments);
+    const duplicateNames = getDuplicateAssignments(players, assignments);
     const benchLabel = card.querySelector(".bench-list");
     const benchMarkup = benchIds.length
       ? benchIds.map((playerId) => {
           const battingNumber = getBattingNumber(team.players, playerId);
-          return `#${battingNumber} ${getPlayerName(team.players, playerId)}`;
+          return `#${battingNumber} ${getPlayerName(players, playerId)}`;
         }).join(" | ")
       : "None";
     const duplicateText = duplicateNames.length ? ` | Duplicate: ${duplicateNames.join(", ")}` : "";
@@ -1668,6 +1682,7 @@ function renderLineups() {
 
 function renderLockedDefenseControls() {
   const team = getActiveTeam();
+  const players = getAvailablePlayers(team);
   const rules = getTeamRules(team);
   elements.lockedDefensePanel.innerHTML = "";
 
@@ -1723,7 +1738,7 @@ function renderLockedDefenseControls() {
       slot.className = "defense-grid-cell locked-defense-cell";
       const select = document.createElement("select");
       select.className = "grid-player-select";
-      populatePlayerOptions(select, team.players, team.innings[String(inning)][position]);
+      populatePlayerOptions(select, players, team.innings[String(inning)][position]);
       select.addEventListener("change", (event) => {
         updateActiveTeam((activeTeam) => {
           activeTeam.innings[String(inning)][position] = event.target.value;
@@ -1774,6 +1789,7 @@ function renderDefenseValidation() {
 
 function renderDefenseGrid() {
   const team = getActiveTeam();
+  const players = getAvailablePlayers(team);
   const violationMap = getDefenseViolationMap(team, state.innings);
   elements.defenseGrid.innerHTML = "";
   const rules = getTeamRules(team);
@@ -1786,7 +1802,7 @@ function renderDefenseGrid() {
   elements.defenseGrid.append(header);
 
   const rows = [...POSITIONS];
-  const maxBenchCount = Math.max(...Array.from({ length: state.innings }, (_, index) => getBenchPlayers(team.players, team.innings[String(index + 1)]).length), 0);
+  const maxBenchCount = Math.max(...Array.from({ length: state.innings }, (_, index) => getBenchPlayers(players, team.innings[String(index + 1)]).length), 0);
   for (let benchIndex = 0; benchIndex < maxBenchCount; benchIndex += 1) {
     rows.push(`BENCH_${benchIndex + 1}`);
   }
@@ -1800,20 +1816,20 @@ function renderDefenseGrid() {
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const inningAssignments = team.innings[String(inning)];
       const duplicateGroups = getDuplicateAssignmentGroups(inningAssignments);
-      const benchIds = getBenchPlayers(team.players, inningAssignments);
+      const benchIds = getBenchPlayers(players, inningAssignments);
       const playerId = rowKey.startsWith("BENCH_")
         ? benchIds[Number(rowKey.split("_")[1]) - 1] || ""
         : inningAssignments[rowKey];
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${rowKey.startsWith("BENCH_") ? " bench" : ""}`;
-      applyPlayerTint(cell, team.players, playerId);
+      applyPlayerTint(cell, players, playerId);
       applyDuplicateGroupClass(cell, duplicateGroups[playerId]);
       applyViolationClass(cell, violationMap, String(inning), rowKey, playerId);
       const select = document.createElement("select");
       select.className = "grid-player-select";
       populatePlayerOptions(
         select,
-        team.players,
+        players,
         playerId,
         rowKey.startsWith("BENCH_") ? "Bench" : "Open",
         formatGridPlayerOption,
@@ -1841,6 +1857,7 @@ function renderDefenseGrid() {
 
 function renderPlayerDefenseGrid() {
   const team = getActiveTeam();
+  const players = getAvailablePlayers(team);
   const violationMap = getDefenseViolationMap(team, state.innings);
   elements.playerDefenseGrid.innerHTML = "";
   const rules = getTeamRules(team);
@@ -1853,16 +1870,16 @@ function renderPlayerDefenseGrid() {
   }
   elements.playerDefenseGrid.append(header);
 
-  team.players.forEach((player, index) => {
+  players.forEach((player) => {
     const row = document.createElement("div");
     row.className = "defense-grid-row player-defense-row";
-    row.append(createDefenseGridCell(`#${index + 1} ${getShortPlayerName(team.players, player.id)}`, true, true));
+    row.append(createDefenseGridCell(`#${getBattingNumber(team.players, player.id)} ${getShortPlayerName(team.players, player.id)}`, true, true));
 
     for (let inning = 1; inning <= state.innings; inning += 1) {
       const assignments = team.innings[String(inning)];
       const duplicateGroups = getDuplicateAssignmentGroups(assignments);
       const position = POSITIONS.find((slot) => assignments[slot] === player.id);
-      const benchIds = getBenchPlayers(team.players, assignments);
+      const benchIds = getBenchPlayers(players, assignments);
       const cell = document.createElement("div");
       cell.className = `defense-grid-cell${position ? "" : " bench"}`;
       applyPositionTint(cell, position || "BENCH");
