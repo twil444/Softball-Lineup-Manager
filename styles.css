@@ -620,7 +620,8 @@ select {
 }
 
 .defense-diamond-large {
-  min-height: 250px;
+  min-height: 320px;
+  background: linear-gradient(180deg, #e7f3dc 0%, #d9edcf 100%);
 }
 
 .defense-diamond::before,
@@ -628,23 +629,27 @@ select {
   content: "";
   position: absolute;
   left: 50%;
-  top: 18px;
-  width: 92px;
-  height: 92px;
-  margin-left: -46px;
+  top: 30px;
+  width: 150px;
+  height: 150px;
+  margin-left: -75px;
   border: 3px solid rgba(255, 255, 255, 0.96);
   transform: rotate(45deg);
+}
+
+.defense-diamond::before {
+  content: none;
 }
 
 .defense-spot,
 .game-spot {
   position: absolute;
-  width: 58px;
-  min-height: 30px;
+  width: 56px;
+  min-height: 28px;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(23, 74, 124, 0.15);
-  border-radius: 14px;
-  padding: 3px;
+  border-radius: 12px;
+  padding: 3px 2px;
   text-align: center;
   box-shadow: 0 8px 18px rgba(20, 52, 82, 0.12);
   transform: translate(-50%, -50%);
@@ -656,7 +661,7 @@ select {
 
 .spot-label {
   display: block;
-  font-size: 0.48rem;
+  font-size: 0.42rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -664,16 +669,17 @@ select {
 
 .spot-value {
   display: block;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-weight: 800;
   color: var(--accent);
+  line-height: 1.05;
 }
 
 .spot-detail {
   display: block;
-  font-size: 0.48rem;
+  font-size: 0.42rem;
   color: var(--muted);
-  line-height: 1.15;
+  line-height: 1.05;
 }
 
 .base-card-header {
