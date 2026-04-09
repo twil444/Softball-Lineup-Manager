@@ -867,6 +867,8 @@ const elements = {
   preferencesList: document.querySelector("#preferences-list"),
   inningCount: document.querySelector("#inning-count"),
   balanceDefense: document.querySelector("#balance-defense"),
+  balanceDefenseInningGrid: document.querySelector("#balance-defense-inning-grid"),
+  balanceDefensePlayerGrid: document.querySelector("#balance-defense-player-grid"),
   undoInningGrid: document.querySelector("#undo-inning-grid"),
   undoPlayerGrid: document.querySelector("#undo-player-grid"),
   defenseVisualInning: document.querySelector("#defense-visual-inning"),
@@ -926,11 +928,23 @@ elements.inningCount?.addEventListener("change", (event) => {
 });
 
 elements.balanceDefense?.addEventListener("click", () => {
+  runBalanceDefense();
+});
+
+elements.balanceDefenseInningGrid?.addEventListener("click", () => {
+  runBalanceDefense();
+});
+
+elements.balanceDefensePlayerGrid?.addEventListener("click", () => {
+  runBalanceDefense();
+});
+
+function runBalanceDefense() {
   updateActiveTeam((team) => {
     balanceCycleState[team.id] = (balanceCycleState[team.id] || 0) + 1;
     rebalanceDefense(team, state.innings);
   });
-});
+}
 
 elements.undoInningGrid?.addEventListener("click", () => {
   updateActiveTeam((team) => {
